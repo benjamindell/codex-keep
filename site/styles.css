@@ -1,12 +1,13 @@
 :root {
   color-scheme: light;
-  --bg: #fbf1df;
-  --text: #28231f;
-  --muted: #786c61;
-  --button: #292421;
-  --button-text: #fff8ec;
-  --soft: #f1e2cd;
-  --outline: #d8c8b5;
+  --bg: #eaf7f2;
+  --bg-warm: #f7fbef;
+  --text: #172520;
+  --muted: #526862;
+  --button: #14231f;
+  --button-text: #f7fff9;
+  --soft: #d8eee6;
+  --outline: #b6d4cc;
 }
 
 * {
@@ -17,8 +18,9 @@ body {
   min-height: 100svh;
   margin: 0;
   background:
-    radial-gradient(circle at 50% 52%, rgba(255, 255, 255, 0.44), transparent 36%),
-    var(--bg);
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.72), transparent 32%),
+    radial-gradient(circle at 82% 12%, rgba(194, 230, 255, 0.5), transparent 30%),
+    linear-gradient(140deg, var(--bg-warm) 0%, var(--bg) 54%, #d8eef8 100%);
   color: var(--text);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -56,10 +58,10 @@ a {
   border: 3px solid #2a2521;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0)),
-    #2a2521;
+    #20342f;
   box-shadow:
-    inset 0 0 0 4px rgba(251, 241, 223, 0.6),
-    0 12px 24px rgba(70, 54, 36, 0.16);
+    inset 0 0 0 4px rgba(234, 247, 242, 0.7),
+    0 12px 24px rgba(24, 58, 49, 0.16);
 }
 
 .hero {
@@ -99,13 +101,20 @@ h1 {
   background: var(--button);
   font-size: clamp(19px, 1.8vw, 25px);
   font-weight: 780;
-  box-shadow: 0 24px 44px rgba(44, 36, 29, 0.22);
+  box-shadow: 0 24px 44px rgba(20, 58, 47, 0.2);
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
 
 .download:hover {
   transform: translateY(-2px);
-  box-shadow: 0 30px 52px rgba(44, 36, 29, 0.28);
+  box-shadow: 0 30px 52px rgba(20, 58, 47, 0.26);
+}
+
+.download-icon {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+  flex: 0 0 auto;
 }
 
 @media (max-width: 720px) {
