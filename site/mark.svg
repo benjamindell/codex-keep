@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Codex Keep">
+  <rect width="64" height="64" rx="16" fill="#090907"/>
+  <path d="M17 24.5c0-3 2.4-5.5 5.5-5.5h19c3 0 5.5 2.4 5.5 5.5v18c0 3-2.4 5.5-5.5 5.5h-19c-3 0-5.5-2.4-5.5-5.5v-18Z" fill="#8FE7C1"/>
+  <path d="M22 27h20M22 33h13M22 39h16" stroke="#07150F" stroke-width="4" stroke-linecap="round"/>
+</svg>
