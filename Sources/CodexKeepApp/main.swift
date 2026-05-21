@@ -1,5 +1,6 @@
 import AppKit
 import CodexKeepCore
+import ServiceManagement
 import Sparkle
 import SwiftUI
 
@@ -63,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b"))
         menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
+        menu.addItem(launchAtLoginItem())
         menu.addItem(actionItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "u"))
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Quit Codex Keep", action: #selector(quit), keyEquivalent: "q"))
@@ -74,6 +76,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
         item.target = self
         return item
+    }
+
+    private func launchAtLoginItem() -> NSMenuItem {
+        let item = actionItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+        item.state = isLaunchAtLoginEnabled ? .on : .off
+        return item
+    }
+
+    private var isLaunchAtLoginEnabled: Bool {
+        SMAppService.mainApp.status == .enabled
     }
 
     private func statusTitle() -> String {
@@ -130,6 +142,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func checkForUpdates() {
         updaterController.checkForUpdates(nil)
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            if isLaunchAtLoginEnabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not update Launch at Login.")
+        }
+
+        rebuildMenu()
     }
 
     @objc private func quit() {
@@ -216,9 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         button.title = "Saving \(animationFrames[animationFrame])"
     }
 
-    private func presentError(_ error: Error) {
+    private func presentError(_ error: Error, messageText: String = "Codex Keep could not finish the backup.") {
         let alert = NSAlert(error: error)
-        alert.messageText = "Codex Keep could not finish the backup."
+        alert.messageText = messageText
         alert.informativeText = error.localizedDescription
         alert.runModal()
     }

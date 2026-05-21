@@ -1,3 +1,3 @@
-# Codex Keep 0.1.1
+# Codex Keep 0.1.2
 
-Adds Sparkle update checking and a Check for Updates menu item.
+Adds a Launch at Login toggle to the menu bar app.

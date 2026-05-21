@@ -3,15 +3,15 @@
     <channel>
         <title>Codex Keep</title>
         <item>
-            <title>0.1.1</title>
-            <pubDate>Thu, 21 May 2026 13:00:14 +0100</pubDate>
+            <title>0.1.2</title>
+            <pubDate>Thu, 21 May 2026 13:08:43 +0100</pubDate>
             <link>https://codex-keep.vercel.app</link>
-            <sparkle:version>2</sparkle:version>
-            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:version>3</sparkle:version>
+            <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <sparkle:releaseNotesLink>https://codex-keep.vercel.app/Codex-Keep.md</sparkle:releaseNotesLink>
-            <enclosure url="https://codex-keep.vercel.app/downloads/Codex-Keep.zip" length="1175067" type="application/octet-stream" sparkle:edSignature="ff+Pb+FuXhCvGIFCu5tQvZreg/bD7a+R7zUkhQtCAqJ6c1qgeNtUAWuRD1+Un0fTwror5sHrNkOHz0tO0YhQDw=="/>
+            <enclosure url="https://codex-keep.vercel.app/downloads/Codex-Keep.zip" length="1175785" type="application/octet-stream" sparkle:edSignature="u7/NRW/whpNT5xo7e1OEAiFQi6PKJSR3GxBCItdkCYSy+Mo6cu94P8oE9uhL9n2NYKeeGMt7PQ7/4ZgjXRTsCA=="/>
         </item>
     </channel>
 </rss>
