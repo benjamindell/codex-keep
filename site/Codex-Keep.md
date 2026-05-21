@@ -1,3 +1,3 @@
-# Codex Keep 0.1.2
+# Codex Keep 0.1.3
 
-Adds a Launch at Login toggle to the menu bar app.
+Separates backup actions from app admin actions in the menu.
