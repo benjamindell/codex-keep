@@ -1,0 +1,17 @@
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Codex Keep</title>
+        <item>
+            <title>0.1.1</title>
+            <pubDate>Thu, 21 May 2026 13:00:14 +0100</pubDate>
+            <link>https://codex-keep.vercel.app</link>
+            <sparkle:version>2</sparkle:version>
+            <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <sparkle:releaseNotesLink>https://codex-keep.vercel.app/Codex-Keep.md</sparkle:releaseNotesLink>
+            <enclosure url="https://codex-keep.vercel.app/downloads/Codex-Keep.zip" length="1175067" type="application/octet-stream" sparkle:edSignature="ff+Pb+FuXhCvGIFCu5tQvZreg/bD7a+R7zUkhQtCAqJ6c1qgeNtUAWuRD1+Un0fTwror5sHrNkOHz0tO0YhQDw=="/>
+        </item>
+    </channel>
+</rss>

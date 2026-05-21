@@ -1,5 +1,6 @@
 import AppKit
 import CodexKeepCore
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -7,6 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsStore = SettingsStore()
     private let backupService = BackupService()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     private var timer: Timer?
     private var animationTimer: Timer?
@@ -57,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b"))
         menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
+        menu.addItem(actionItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "u"))
         menu.addItem(.separator())
         menu.addItem(actionItem(title: "Quit Codex Keep", action: #selector(quit), keyEquivalent: "q"))
 
@@ -119,6 +126,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         rebuildMenu()
+    }
+
+    @objc private func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
     }
 
     @objc private func quit() {

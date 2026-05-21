@@ -36,6 +36,17 @@ Packaging/make_app.sh
 
 The built app bundle is written to `.build/release/Codex Keep.app`.
 
+## Updates
+
+Codex Keep uses Sparkle for update checks.
+
+- Feed: `https://codex-keep.vercel.app/appcast.xml`
+- Current download: `https://codex-keep.vercel.app/downloads/Codex-Keep.zip`
+- The app has a `Check for Updates...` menu item.
+- Automatic checks are enabled through `SUEnableAutomaticChecks`.
+
+Release archives are signed with Sparkle's EdDSA key. The public key is embedded in `Packaging/Info.plist`; the private key is stored in the local macOS Keychain.
+
 ## Backup layout
 
 ```text

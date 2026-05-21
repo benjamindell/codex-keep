@@ -11,13 +11,19 @@ let package = Package(
         .executable(name: "CodexKeep", targets: ["CodexKeepApp"]),
         .library(name: "CodexKeepCore", targets: ["CodexKeepCore"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", from: "2.9.2")
+    ],
     targets: [
         .target(
             name: "CodexKeepCore"
         ),
         .executableTarget(
             name: "CodexKeepApp",
-            dependencies: ["CodexKeepCore"]
+            dependencies: [
+                "CodexKeepCore",
+                .product(name: "Sparkle", package: "Sparkle")
+            ]
         ),
         .testTarget(
             name: "CodexKeepTests",
