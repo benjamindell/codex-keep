@@ -40,7 +40,8 @@ a {
 }
 
 .brand,
-.download {
+.download,
+.github-link {
   display: inline-flex;
   align-items: center;
 }
@@ -55,6 +56,39 @@ a {
   width: 50px;
   height: 50px;
   display: block;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+}
+
+.github-link {
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid rgba(23, 37, 32, 0.16);
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.42);
+  font-size: 15px;
+  font-weight: 750;
+  box-shadow: 0 10px 28px rgba(20, 58, 47, 0.08);
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.github-link:hover {
+  transform: translateY(-1px);
+  border-color: rgba(23, 37, 32, 0.28);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.github-icon,
+.star-icon {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+  flex: 0 0 auto;
 }
 
 .hero {
@@ -110,6 +144,31 @@ h1 {
   flex: 0 0 auto;
 }
 
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 22px 28px;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.footer a {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.heart-icon {
+  width: 15px;
+  height: 15px;
+  fill: #c83f56;
+  flex: 0 0 auto;
+}
+
 @media (max-width: 720px) {
   .topbar {
     min-height: 86px;
@@ -124,6 +183,17 @@ h1 {
   .brand-mark {
     width: 42px;
     height: 42px;
+  }
+
+  .github-link {
+    width: 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .github-link span,
+  .star-icon {
+    display: none;
   }
 
   .hero {

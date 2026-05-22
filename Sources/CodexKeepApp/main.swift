@@ -5,10 +5,15 @@ import Sparkle
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settingsStore = SettingsStore()
     private let backupService = BackupService()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
     private let updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
@@ -19,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var animationTimer: Timer?
     private var lastResult: BackupResult?
     private var lastError: Error?
+    private weak var statusMenuItem: NSMenuItem?
     private var isBackingUp = false
     private var animationFrame = 0
     private let animationFrames = ["|", "/", "-", "\\"]
@@ -55,9 +61,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
+        menu.delegate = self
 
         let status = NSMenuItem(title: statusTitle(), action: nil, keyEquivalent: "")
         status.isEnabled = false
+        statusMenuItem = status
         menu.addItem(status)
         menu.addItem(.separator())
 
@@ -71,6 +79,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(actionItem(title: "Quit Codex Keep", action: #selector(quit), keyEquivalent: "q"))
 
         statusItem.menu = menu
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        statusMenuItem?.title = statusTitle()
     }
 
     private func actionItem(title: String, action: Selector, keyEquivalent: String) -> NSMenuItem {
@@ -95,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let result = lastResult {
-            return "Backed up \(result.copiedItemCount) items"
+            return "Last synced \(relativeSyncTime(since: result.manifest.createdAt))"
         }
 
         if let lastError {
@@ -103,6 +115,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         return "Codex Keep is ready"
+    }
+
+    private func relativeSyncTime(since date: Date, now: Date = Date()) -> String {
+        if now.timeIntervalSince(date) < 60 {
+            return "just now"
+        }
+
+        return relativeDateFormatter.localizedString(for: date, relativeTo: now)
     }
 
     @objc private func backUpNow() {

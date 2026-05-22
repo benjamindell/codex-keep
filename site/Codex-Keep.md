@@ -1,3 +1,3 @@
-# Codex Keep 0.1.3
+# Codex Keep 0.1.4
 
-Separates backup actions from app admin actions in the menu.
+Shows the last successful sync time in the menu instead of a misleading backup item count.
