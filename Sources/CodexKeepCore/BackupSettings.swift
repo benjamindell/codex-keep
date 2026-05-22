@@ -33,7 +33,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
 
         return BackupSettings(
             destinationRootPath: destination.path,
-            enabledItemIDs: Set(DefaultBackupItems.items(homeDirectory: homeDirectory).map(\.id))
+            enabledItemIDs: Set(DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager).map(\.id))
         )
     }
 }

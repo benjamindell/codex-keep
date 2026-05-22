@@ -2,12 +2,35 @@ import Foundation
 import Testing
 @testable import CodexKeepCore
 
-@Test func defaultBackupItemsStaySelective() {
-    let itemPaths = DefaultBackupItems.items().map(\.sourcePath)
+@Test func defaultBackupItemsStaySelective() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+    let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
+    let cache = codexHome.appendingPathComponent("cache", isDirectory: true)
+
+    try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: cache, withIntermediateDirectories: true)
+    try "memory".write(
+        to: socialPresence.appendingPathComponent("voice-preference-memory.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "cache".write(
+        to: cache.appendingPathComponent("debug.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let itemPaths = DefaultBackupItems.items(homeDirectory: root).map(\.sourcePath)
 
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/automations") })
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/AGENTS.md") })
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/config.toml") })
+    #expect(itemPaths.contains { $0.hasSuffix("/.codex/social-presence") })
+    #expect(!itemPaths.contains { $0.hasSuffix("/.codex/cache") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/auth.json") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/sessions") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/logs_2.sqlite") })
@@ -23,12 +46,14 @@ import Testing
     let agentsHome = root.appendingPathComponent(".agents", isDirectory: true)
     let automations = codexHome.appendingPathComponent("automations", isDirectory: true)
     let skills = codexHome.appendingPathComponent("skills", isDirectory: true)
+    let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
     let systemSkill = skills.appendingPathComponent(".system", isDirectory: true)
     let customSkill = skills.appendingPathComponent("custom-skill", isDirectory: true)
     let agentSkill = agentsHome.appendingPathComponent("skills/marketing-skill", isDirectory: true)
     let destination = root.appendingPathComponent("Backup", isDirectory: true)
 
     try fileManager.createDirectory(at: automations, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: systemSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: customSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: agentSkill, withIntermediateDirectories: true)
@@ -40,6 +65,11 @@ import Testing
     )
     try "generated".write(
         to: automations.appendingPathComponent(".run-jitter-salt"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "keep".write(
+        to: socialPresence.appendingPathComponent("social-log.md"),
         atomically: true,
         encoding: .utf8
     )
@@ -61,7 +91,7 @@ import Testing
 
     let settings = BackupSettings(
         destinationRootPath: destination.path,
-        enabledItemIDs: ["codex-automations", "codex-skills", "agent-skills"]
+        enabledItemIDs: ["codex-automations", "codex-skills", "agent-skills", "codex-markdown-social-presence"]
     )
 
     let result = try BackupService(fileManager: fileManager).runBackup(
@@ -76,6 +106,7 @@ import Testing
 
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/automation.toml").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/.run-jitter-salt").path))
+    #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/social-presence/social-log.md").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/.system/SKILL.md").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Agents/skills/marketing-skill/SKILL.md").path))
@@ -187,6 +218,40 @@ import Testing
         "1970-01-08"
     ])
     #expect(fileManager.fileExists(atPath: snapshotsURL.appending(relativePath: "1970-01-08/Codex/automations/automation.toml").path))
+}
+
+@Test func settingsStoreEnablesNewDefaultItemsForExistingSettings() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
+    let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
+    let settingsURL = root.appending(relativePath: "Application Support/Codex Keep/settings.json")
+
+    try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
+    try "keep".write(
+        to: socialPresence.appendingPathComponent("social-log.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try fileManager.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+    let previousSettings = BackupSettings(
+        destinationRootPath: root.appendingPathComponent("Backup", isDirectory: true).path,
+        enabledItemIDs: ["codex-automations"]
+    )
+    let encoder = JSONEncoder()
+    try encoder.encode(previousSettings).write(to: settingsURL)
+
+    let store = SettingsStore(
+        fileManager: fileManager,
+        settingsURL: settingsURL,
+        homeDirectory: root
+    )
+
+    #expect(store.settings.enabledItemIDs.contains("codex-automations"))
+    #expect(store.settings.enabledItemIDs.contains("codex-markdown-social-presence"))
 }
 
 private extension URL {

@@ -1,3 +1,3 @@
-# Codex Keep 0.1.5
+# Codex Keep 0.1.6
 
-Moves Codex Keep updates and downloads to codexkeep.app.
+Automatically backs up markdown-backed Codex folders, including automation memory folders such as `~/.codex/social-presence/`.

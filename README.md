@@ -18,6 +18,7 @@ The first version is deliberately conservative:
 - `~/.codex/config.toml` to `Codex/config.toml`
 - `~/.codex/rules` to `Codex/rules`
 - `~/.codex/skills` to `Codex/skills`, excluding bundled/system skills
+- Markdown-backed top-level `~/.codex` folders to `Codex/<folder>`, excluding known cache, session, log, plugin, database, and worktree folders
 - `~/.agents/skills` to `Agents/skills`
 
 ## Development

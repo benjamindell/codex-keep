@@ -27,10 +27,19 @@ public struct BackupItem: Codable, Equatable, Identifiable, Sendable {
 
 public enum DefaultBackupItems {
     public static func items(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) -> [BackupItem] {
-        let codexHome = homeDirectory.appendingPathComponent(".codex").path
-        let agentsHome = homeDirectory.appendingPathComponent(".agents").path
+        items(homeDirectory: homeDirectory, fileManager: .default)
+    }
 
-        return [
+    public static func items(
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
+        fileManager: FileManager = .default
+    ) -> [BackupItem] {
+        let codexHomeURL = homeDirectory.appendingPathComponent(".codex", isDirectory: true)
+        let agentsHomeURL = homeDirectory.appendingPathComponent(".agents", isDirectory: true)
+        let codexHome = codexHomeURL.path
+        let agentsHome = agentsHomeURL.path
+
+        let explicitItems = [
             BackupItem(
                 id: "codex-automations",
                 displayName: "Codex automations",
@@ -75,5 +84,91 @@ public enum DefaultBackupItems {
                 destinationPath: "Agents/skills"
             )
         ]
+
+        return explicitItems + discoveredMarkdownFolders(
+            in: codexHomeURL,
+            excluding: Set(explicitItems.map(\.sourcePath)),
+            fileManager: fileManager
+        )
+    }
+
+    private static func discoveredMarkdownFolders(
+        in codexHomeURL: URL,
+        excluding explicitSourcePaths: Set<String>,
+        fileManager: FileManager
+    ) -> [BackupItem] {
+        guard let directories = try? fileManager.contentsOfDirectory(
+            at: codexHomeURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        let excludedFolderNames: Set<String> = [
+            ".tmp",
+            "archived_sessions",
+            "browser",
+            "cache",
+            "computer-use",
+            "log",
+            "logs",
+            "node_repl",
+            "plugins",
+            "sessions",
+            "shell_snapshots",
+            "sqlite",
+            "tmp",
+            "vendor_imports",
+            "worktrees"
+        ]
+
+        return directories
+            .filter { directoryURL in
+                var isDirectory: ObjCBool = false
+                guard fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
+                      isDirectory.boolValue
+                else {
+                    return false
+                }
+
+                let folderName = directoryURL.lastPathComponent
+                return !folderName.hasPrefix(".")
+                    && !excludedFolderNames.contains(folderName)
+                    && !explicitSourcePaths.contains(directoryURL.path)
+                    && containsMarkdownFile(in: directoryURL, fileManager: fileManager)
+            }
+            .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
+            .map { directoryURL in
+                let folderName = directoryURL.lastPathComponent
+                return BackupItem(
+                    id: "codex-markdown-\(folderName)",
+                    displayName: "Codex \(folderName)",
+                    sourcePath: directoryURL.path,
+                    destinationPath: "Codex/\(folderName)"
+                )
+            }
+    }
+
+    private static func containsMarkdownFile(in directoryURL: URL, fileManager: FileManager) -> Bool {
+        guard let enumerator = fileManager.enumerator(
+            at: directoryURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return false
+        }
+
+        for case let childURL as URL in enumerator {
+            guard childURL.pathExtension.lowercased() == "md" else {
+                continue
+            }
+
+            if (try? childURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true {
+                return true
+            }
+        }
+
+        return false
     }
 }
