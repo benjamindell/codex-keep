@@ -1,3 +1,3 @@
-# Codex Keep 0.1.4
+# Codex Keep 0.1.5
 
-Shows the last successful sync time in the menu instead of a misleading backup item count.
+Moves Codex Keep updates and downloads to codexkeep.app.

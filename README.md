@@ -40,8 +40,8 @@ The built app bundle is written to `.build/release/Codex Keep.app`.
 
 Codex Keep uses Sparkle for update checks.
 
-- Feed: `https://codex-keep.vercel.app/appcast.xml`
-- Current download: `https://codex-keep.vercel.app/downloads/Codex-Keep.zip`
+- Feed: `https://codexkeep.app/appcast.xml`
+- Current download: `https://codexkeep.app/downloads/Codex-Keep.zip`
 - The app has a `Check for Updates...` menu item.
 - Automatic checks are enabled through `SUEnableAutomaticChecks`.
 

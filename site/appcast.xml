@@ -3,15 +3,15 @@
     <channel>
         <title>Codex Keep</title>
         <item>
-            <title>0.1.4</title>
-            <pubDate>Fri, 22 May 2026 09:07:50 +0100</pubDate>
-            <link>https://codex-keep.vercel.app</link>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+            <title>0.1.5</title>
+            <pubDate>Fri, 22 May 2026 09:33:14 +0100</pubDate>
+            <link>https://codexkeep.app</link>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <sparkle:releaseNotesLink>https://codex-keep.vercel.app/Codex-Keep.md</sparkle:releaseNotesLink>
-            <enclosure url="https://codex-keep.vercel.app/downloads/Codex-Keep.zip" length="1198051" type="application/octet-stream" sparkle:edSignature="lKUrjcutZxBWFPsJWBrWmoTRYShz0ZZv0xMRqQCazQ9qPdm23IliJ8W7Q+NLZtp0ha4z2FxtoxRrmbXhBqVUBw=="/>
+            <sparkle:releaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:releaseNotesLink>
+            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1198040" type="application/octet-stream" sparkle:edSignature="9L9nhJvxh0BQfgU/TnVV4LRITZMrwMhmuD6TdHgl4AGH2GrCYWP5XMMImh9+WNkXBQgiU0H1fSmJ9+NtYK/eCA=="/>
         </item>
     </channel>
 </rss>
