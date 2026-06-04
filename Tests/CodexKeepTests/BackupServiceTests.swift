@@ -49,6 +49,7 @@ import Testing
     let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
     let systemSkill = skills.appendingPathComponent(".system", isDirectory: true)
     let customSkill = skills.appendingPathComponent("custom-skill", isDirectory: true)
+    let customSkillNodeModules = customSkill.appendingPathComponent("node_modules/playwright-core", isDirectory: true)
     let agentSkill = agentsHome.appendingPathComponent("skills/marketing-skill", isDirectory: true)
     let destination = root.appendingPathComponent("Backup", isDirectory: true)
 
@@ -56,6 +57,7 @@ import Testing
     try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: systemSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: customSkill, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: customSkillNodeModules, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: agentSkill, withIntermediateDirectories: true)
 
     try "automation".write(
@@ -80,6 +82,11 @@ import Testing
     )
     try "copy me".write(
         to: customSkill.appendingPathComponent("SKILL.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "dependency".write(
+        to: customSkillNodeModules.appendingPathComponent("cli.js"),
         atomically: true,
         encoding: .utf8
     )
@@ -109,6 +116,7 @@ import Testing
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/social-presence/social-log.md").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/.system/SKILL.md").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/node_modules/playwright-core/cli.js").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Agents/skills/marketing-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: ".codex").path))
     #expect(fileManager.fileExists(atPath: latest.appendingPathComponent("manifest.json").path))

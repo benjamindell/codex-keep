@@ -9,7 +9,7 @@ The first version is deliberately conservative:
 - It excludes obvious secrets, large sessions, logs, caches, and live databases.
 - It writes a `manifest.json` alongside the latest backup.
 - It keeps one daily snapshot for each of the last seven days.
-- Restore is intentionally manual for now.
+- Deploying a backup to the current Mac is intentional: Codex Keep shows a dry-run checklist and saves a safety snapshot before replacing selected local files.
 
 ## Default backup set
 
@@ -20,6 +20,17 @@ The first version is deliberately conservative:
 - `~/.codex/skills` to `Codex/skills`, excluding bundled/system skills
 - Markdown-backed top-level `~/.codex` folders to `Codex/<folder>`, excluding known cache, session, log, plugin, database, and worktree folders
 - `~/.agents/skills` to `Agents/skills`
+
+## Deploying to another Mac
+
+Use `Deploy Backup to This Mac...` from the menu bar app to seed or update a Mac from a Codex Keep backup. You can choose a machine folder, a `latest` folder, or a dated snapshot.
+
+Codex Keep reviews the backup before writing anything:
+
+- Automations are shown individually so mature daily jobs can move to an always-on Mac without pulling every automation away from your main machine.
+- Shared items like `AGENTS.md`, config, rules, and skills are shown as broader items.
+- New and changed items are selected by default; unchanged items are left unchecked.
+- A restore safety snapshot of the selected local items is written under `Restore Safety` before anything is replaced.
 
 ## Development
 

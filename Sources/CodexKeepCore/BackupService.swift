@@ -320,7 +320,15 @@ public final class BackupService {
 
     private func shouldExclude(relativePath: String, excludedPaths: Set<String>) -> Bool {
         excludedPaths.contains { excludedPath in
-            relativePath == excludedPath || relativePath.hasPrefix(excludedPath + "/")
+            if relativePath == excludedPath || relativePath.hasPrefix(excludedPath + "/") {
+                return true
+            }
+
+            if !excludedPath.contains("/") {
+                return relativePath.split(separator: "/").contains(Substring(excludedPath))
+            }
+
+            return false
         }
     }
 

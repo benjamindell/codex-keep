@@ -74,7 +74,8 @@ public enum DefaultBackupItems {
                 destinationPath: "Codex/skills",
                 excludedRelativePaths: [
                     ".system",
-                    "codex-primary-runtime"
+                    "codex-primary-runtime",
+                    "node_modules"
                 ]
             ),
             BackupItem(
