@@ -7,6 +7,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
     public var trustedMachineNames: Set<String>
     public var automaticallySyncTrustedMachines: Bool
     public var syncRepositoryDevFiles: Bool
+    public var secondaryMachineMode: Bool
     public var syncStates: [String: SyncFileState]
     public var syncTombstones: [String: SyncTombstone]
 
@@ -17,6 +18,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         trustedMachineNames: Set<String> = [],
         automaticallySyncTrustedMachines: Bool = false,
         syncRepositoryDevFiles: Bool = false,
+        secondaryMachineMode: Bool = false,
         syncStates: [String: SyncFileState] = [:],
         syncTombstones: [String: SyncTombstone] = [:]
     ) {
@@ -26,6 +28,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         self.trustedMachineNames = trustedMachineNames
         self.automaticallySyncTrustedMachines = automaticallySyncTrustedMachines
         self.syncRepositoryDevFiles = syncRepositoryDevFiles
+        self.secondaryMachineMode = secondaryMachineMode
         self.syncStates = syncStates
         self.syncTombstones = syncTombstones
     }
@@ -37,6 +40,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         case trustedMachineNames
         case automaticallySyncTrustedMachines
         case syncRepositoryDevFiles
+        case secondaryMachineMode
         case syncStates
         case syncTombstones
     }
@@ -49,6 +53,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         self.trustedMachineNames = try container.decodeIfPresent(Set<String>.self, forKey: .trustedMachineNames) ?? []
         self.automaticallySyncTrustedMachines = try container.decodeIfPresent(Bool.self, forKey: .automaticallySyncTrustedMachines) ?? false
         self.syncRepositoryDevFiles = try container.decodeIfPresent(Bool.self, forKey: .syncRepositoryDevFiles) ?? false
+        self.secondaryMachineMode = try container.decodeIfPresent(Bool.self, forKey: .secondaryMachineMode) ?? false
         self.syncStates = try container.decodeIfPresent([String: SyncFileState].self, forKey: .syncStates) ?? [:]
         self.syncTombstones = try container.decodeIfPresent([String: SyncTombstone].self, forKey: .syncTombstones) ?? [:]
     }

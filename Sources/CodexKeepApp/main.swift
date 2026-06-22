@@ -62,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
 
     private var timer: Timer?
+    private var repositoryPullTimer: Timer?
     private var animationTimer: Timer?
     private var backupTimeoutTimer: Timer?
     private var trustedMachinesWindowController: NSWindowController?
@@ -71,12 +72,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastError: Error?
     private weak var statusMenuItem: NSMenuItem?
     private var isBackingUp = false
+    private var isPullingRepositories = false
     private var activeBackupID: UUID?
     private var currentBackupPhase = "starting backup"
     private var animationFrame = 0
     private let animationFrames = ["|", "/", "-", "\\"]
     private let minimumSyncIndicatorDuration: TimeInterval = 1.25
     private let backupTimeoutDuration: TimeInterval = 180
+    private let repositoryPullIntervalDuration: TimeInterval = 30 * 60
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -84,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildMenu()
         runBackup()
         scheduleTimer()
+        scheduleRepositoryPullTimer()
     }
 
     private func configureStatusItem() {
@@ -107,6 +111,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func scheduleRepositoryPullTimer() {
+        repositoryPullTimer?.invalidate()
+        repositoryPullTimer = nil
+
+        guard settingsStore.settings.secondaryMachineMode else {
+            return
+        }
+
+        repositoryPullTimer = Timer.scheduledTimer(
+            withTimeInterval: repositoryPullIntervalDuration,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.runRepositoryPull()
+            }
+        }
+    }
+
     private func rebuildMenu() {
         let menu = NSMenu()
         menu.delegate = self
@@ -126,6 +148,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(actionItem(title: "Manage Automations...", action: #selector(manageAutomations), keyEquivalent: "m"))
         menu.addItem(autoSyncItem())
         menu.addItem(repositoryDevFilesItem())
+        menu.addItem(secondaryMachineModeItem())
+        let pullRepositoriesItem = actionItem(title: "Pull Repositories Now", action: #selector(pullRepositoriesNow), keyEquivalent: "p")
+        pullRepositoriesItem.isEnabled = !isPullingRepositories
+        menu.addItem(pullRepositoriesItem)
+        menu.addItem(actionItem(title: "Open Repository Pull Log", action: #selector(openRepositoryPullLog), keyEquivalent: "g"))
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(launchAtLoginItem())
@@ -164,6 +191,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
+    private func secondaryMachineModeItem() -> NSMenuItem {
+        let item = actionItem(title: "Secondary Machine Mode", action: #selector(toggleSecondaryMachineMode), keyEquivalent: "")
+        item.state = settingsStore.settings.secondaryMachineMode ? .on : .off
+        return item
+    }
+
     private var isLaunchAtLoginEnabled: Bool {
         SMAppService.mainApp.status == .enabled
     }
@@ -171,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func statusTitle() -> String {
         if isBackingUp {
             return "Saving: \(currentBackupPhase)"
+        }
+
+        if isPullingRepositories {
+            return "Pulling repositories"
         }
 
         if let result = lastResult {
@@ -226,6 +263,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openDiagnosticLog() {
         NSWorkspace.shared.activateFileViewerSelecting([Self.backupRunLogURL()])
+    }
+
+    @objc private func openRepositoryPullLog() {
+        NSWorkspace.shared.activateFileViewerSelecting([Self.repositoryPullLogURL()])
     }
 
     @objc private func reviewPeerChanges() {
@@ -530,8 +571,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildMenu()
     }
 
+    @objc private func toggleSecondaryMachineMode() {
+        if !settingsStore.settings.secondaryMachineMode {
+            let alert = NSAlert()
+            alert.messageText = "Enable Secondary Machine Mode?"
+            alert.informativeText = "Every 30 minutes, Codex Keep will pull clean Git repositories in ~/Repositories. Repositories with uncommitted changes, missing upstreams, or merge conflicts are skipped and logged."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Enable")
+            alert.addButton(withTitle: "Cancel")
+
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                return
+            }
+        }
+
+        do {
+            var isEnabling = false
+            try settingsStore.update { settings in
+                settings.secondaryMachineMode.toggle()
+                isEnabling = settings.secondaryMachineMode
+            }
+            scheduleRepositoryPullTimer()
+            if isEnabling {
+                runRepositoryPull()
+            }
+        } catch {
+            presentError(error, messageText: "Codex Keep could not update Secondary Machine Mode.")
+        }
+
+        rebuildMenu()
+    }
+
+    @objc private func pullRepositoriesNow() {
+        runRepositoryPull()
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    private func runRepositoryPull() {
+        guard !isPullingRepositories else {
+            return
+        }
+
+        isPullingRepositories = true
+        if !isBackingUp {
+            updateStatusItemForRepositoryPull()
+        }
+        rebuildMenu()
+
+        Task.detached {
+            Self.resetRepositoryPullLog()
+            Self.logRepositoryPullLine("Repository pull started with Codex Keep \(Self.appVersionDescription())")
+            let repositoriesRoot = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Repositories", isDirectory: true)
+            let result = RepositoryPullService().pullRepositories(repositoriesRoot: repositoriesRoot)
+            Self.writeRepositoryPullLog(result)
+
+            await MainActor.run {
+                self.isPullingRepositories = false
+                if !self.isBackingUp {
+                    self.restoreDefaultStatusItem()
+                }
+                self.rebuildMenu()
+            }
+        }
     }
 
     private func runBackup() {
@@ -655,6 +760,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func stopSyncAnimation() {
         animationTimer?.invalidate()
         animationTimer = nil
+        restoreDefaultStatusItem()
+    }
+
+    private func restoreDefaultStatusItem() {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "externaldrive.badge.icloud", accessibilityDescription: "Codex Keep")
             button.image?.isTemplate = true
@@ -670,6 +779,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         button.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Backing up")
         button.image?.isTemplate = true
         button.title = "Saving \(animationFrames[animationFrame])"
+    }
+
+    private func updateStatusItemForRepositoryPull() {
+        guard let button = statusItem.button else {
+            return
+        }
+
+        button.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Pulling repositories")
+        button.image?.isTemplate = true
+        button.title = "Pulling"
     }
 
     private func presentError(_ error: Error, messageText: String = "Codex Keep could not finish the backup.") {
@@ -1094,6 +1213,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .appendingPathComponent("Logs", isDirectory: true)
             .appendingPathComponent("Codex Keep", isDirectory: true)
             .appendingPathComponent("last-run.log")
+    }
+
+    nonisolated private static func resetRepositoryPullLog() {
+        let url = repositoryPullLogURL()
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? "".write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    nonisolated private static func logRepositoryPullLine(_ message: String) {
+        let formatter = ISO8601DateFormatter()
+        let line = "\(formatter.string(from: Date())) \(message)\n"
+        appendRepositoryPullLog(line)
+    }
+
+    nonisolated private static func writeRepositoryPullLog(_ result: RepositoryPullRunResult) {
+        let formatter = ISO8601DateFormatter()
+        let summary = "Pulled \(result.pulledCount), skipped \(result.skippedCount), failed \(result.failedCount) of \(result.results.count) repositories"
+        var lines = [
+            "\(formatter.string(from: Date())) \(summary)",
+            "Repositories root: \(result.repositoriesRootPath)",
+            "Started: \(formatter.string(from: result.startedAt))",
+            "Finished: \(formatter.string(from: result.finishedAt))"
+        ]
+
+        if result.results.isEmpty {
+            lines.append("No Git repositories were found.")
+        } else {
+            lines.append("")
+            for item in result.results {
+                lines.append("[\(item.status.rawValue)] \(item.repositoryName): \(item.message)")
+                lines.append("  \(item.repositoryPath)")
+            }
+        }
+
+        appendRepositoryPullLog(lines.joined(separator: "\n") + "\n")
+    }
+
+    nonisolated private static func appendRepositoryPullLog(_ text: String) {
+        let url = repositoryPullLogURL()
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(text.utf8))
+        } else {
+            try? text.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    nonisolated private static func repositoryPullLogURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("Codex Keep", isDirectory: true)
+            .appendingPathComponent("repository-pulls.log")
     }
 
     nonisolated private static func appVersionDescription() -> String {

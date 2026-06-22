@@ -400,6 +400,7 @@ import Testing
     #expect(store.settings.enabledItemIDs.contains("codex-markdown-social-presence"))
     #expect(!store.settings.enabledItemIDs.contains("git-repo-dev-github.com-example-example-app"))
     #expect(store.settings.syncRepositoryDevFiles == false)
+    #expect(store.settings.secondaryMachineMode == false)
 }
 
 private func writeGitConfig(in repository: URL, originURL: String, fileManager: FileManager) throws {
