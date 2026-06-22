@@ -211,7 +211,7 @@ import Testing
     #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
 }
 
-@Test func backupCopiesSymlinkedCodexSkillDirectoriesAsFolderContent() throws {
+@Test func backupSkipsSymlinkedCodexSkillDirectories() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     defer { try? fileManager.removeItem(at: root) }
@@ -241,9 +241,9 @@ import Testing
         now: Date(timeIntervalSince1970: 0)
     )
 
-    #expect(fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
-    #expect(fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/README.md").path))
-    #expect(result.manifest.files.contains {
+    #expect(!fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
+    #expect(!fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/README.md").path))
+    #expect(!result.manifest.files.contains {
         $0.backupRelativePath == "Codex/skills/heysummit-intercom-article-audit/SKILL.md"
     })
 
@@ -252,7 +252,7 @@ import Testing
         archiveURL: result.latestURL.appendingPathComponent(PayloadArchive.fileName),
         to: extractedArchive
     )
-    #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
+    #expect(!fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
 }
 
 @Test func backupRefreshesStableLatestFolderAndRemovesStaleFiles() throws {

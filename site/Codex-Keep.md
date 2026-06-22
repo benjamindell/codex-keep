@@ -1,7 +1,7 @@
-# Codex Keep 0.1.29
+# Codex Keep 0.1.30
 
-Fixes backups for Codex skills that are symlinked to another local skills folder.
+Stops backing up symlinked Codex skill directories.
 
-- Copies symlinked skill directories as real folder content in the backup.
-- Includes those skill files in the manifest and payload archive so peer sync can install them.
-- Adds regression coverage for symlinked Codex skills.
+- Reverses the 0.1.29 symlink-following behavior.
+- Keeps linked skills out of the backup when they point at local plugin or agent-managed folders.
+- Adds regression coverage for skipping symlinked Codex skills.
