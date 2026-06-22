@@ -354,45 +354,121 @@ public final class BackupService {
         try fileManager.createDirectory(at: destinationURL, withIntermediateDirectories: true)
 
         var stats = CopyStats()
-        guard let enumerator = fileManager.enumerator(
-            at: sourceURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
-            options: []
-        ) else {
-            return stats
+        var visitedDirectoryPaths: Set<String> = []
+        try copyDirectoryContents(
+            from: sourceURL.standardizedFileURL,
+            to: destinationURL.standardizedFileURL,
+            relativePath: "",
+            excluding: excludedPaths,
+            visitedDirectoryPaths: &visitedDirectoryPaths,
+            stats: &stats
+        )
+        return stats
+    }
+
+    private func copyDirectoryContents(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        relativePath: String,
+        excluding excludedPaths: Set<String>,
+        visitedDirectoryPaths: inout Set<String>,
+        stats: inout CopyStats
+    ) throws {
+        let resolvedSourcePath = sourceURL.resolvingSymlinksInPath().standardizedFileURL.path
+        guard visitedDirectoryPaths.insert(resolvedSourcePath).inserted else {
+            return
+        }
+        defer {
+            visitedDirectoryPaths.remove(resolvedSourcePath)
         }
 
-        let canonicalSourcePath = sourceURL.resolvingSymlinksInPath().path
+        let contents = try fileManager.contentsOfDirectory(
+            at: sourceURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
+            options: []
+        )
 
-        for case let sourceChild as URL in enumerator {
-            let canonicalChildPath = sourceChild.resolvingSymlinksInPath().path
-            guard canonicalChildPath.hasPrefix(canonicalSourcePath + "/") else {
+        for sourceChild in contents {
+            let childRelativePath = relativePath.isEmpty
+                ? sourceChild.lastPathComponent
+                : "\(relativePath)/\(sourceChild.lastPathComponent)"
+            if shouldExclude(relativePath: childRelativePath, excludedPaths: excludedPaths) {
                 continue
             }
 
-            let relativePath = String(canonicalChildPath.dropFirst(canonicalSourcePath.count + 1))
-            if shouldExclude(relativePath: relativePath, excludedPaths: excludedPaths) {
-                enumerator.skipDescendants()
-                continue
-            }
+            let destinationChild = destinationURL.appendingRelativePath(childRelativePath)
+            let resourceValues = try sourceChild.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey
+            ])
 
-            let destinationChild = destinationURL.appendingRelativePath(relativePath)
-            let resourceValues = try sourceChild.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
-
-            if resourceValues.isDirectory == true {
-                try fileManager.createDirectory(at: destinationChild, withIntermediateDirectories: true)
-            } else {
-                try fileManager.createDirectory(
-                    at: destinationChild.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
+            if resourceValues.isSymbolicLink == true {
+                try copySymbolicLinkTarget(
+                    from: sourceChild,
+                    to: destinationChild,
+                    relativePath: childRelativePath,
+                    excluding: excludedPaths,
+                    visitedDirectoryPaths: &visitedDirectoryPaths,
+                    stats: &stats
                 )
-                try fileManager.copyItem(at: sourceChild, to: destinationChild)
+            } else if resourceValues.isDirectory == true {
+                try fileManager.createDirectory(at: destinationChild, withIntermediateDirectories: true)
+                try copyDirectoryContents(
+                    from: sourceChild,
+                    to: destinationURL,
+                    relativePath: childRelativePath,
+                    excluding: excludedPaths,
+                    visitedDirectoryPaths: &visitedDirectoryPaths,
+                    stats: &stats
+                )
+            } else if resourceValues.isRegularFile == true {
+                try copyFile(from: sourceChild, to: destinationChild)
                 stats.fileCount += 1
                 stats.byteCount += UInt64(resourceValues.fileSize ?? 0)
             }
         }
+    }
 
-        return stats
+    private func copySymbolicLinkTarget(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        relativePath: String,
+        excluding excludedPaths: Set<String>,
+        visitedDirectoryPaths: inout Set<String>,
+        stats: inout CopyStats
+    ) throws {
+        let resolvedURL = sourceURL.resolvingSymlinksInPath().standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: resolvedURL.path, isDirectory: &isDirectory) else {
+            return
+        }
+
+        if isDirectory.boolValue {
+            try fileManager.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+            try copyDirectoryContents(
+                from: resolvedURL,
+                to: destinationURL.deletingLastPathComponent(),
+                relativePath: relativePath,
+                excluding: excludedPaths,
+                visitedDirectoryPaths: &visitedDirectoryPaths,
+                stats: &stats
+            )
+        } else {
+            let values = try resolvedURL.resourceValues(forKeys: [.fileSizeKey])
+            try copyFile(from: resolvedURL, to: destinationURL)
+            stats.fileCount += 1
+            stats.byteCount += UInt64(values.fileSize ?? 0)
+        }
+    }
+
+    private func copyFile(from sourceURL: URL, to destinationURL: URL) throws {
+        try fileManager.createDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try fileManager.copyItem(at: sourceURL, to: destinationURL)
     }
 
     private func shouldExclude(relativePath: String, excludedPaths: Set<String>) -> Bool {

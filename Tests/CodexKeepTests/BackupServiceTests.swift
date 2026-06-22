@@ -211,6 +211,50 @@ import Testing
     #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
 }
 
+@Test func backupCopiesSymlinkedCodexSkillDirectoriesAsFolderContent() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let codexSkills = root.appending(relativePath: ".codex/skills")
+    let agentsSkill = root.appending(relativePath: ".agents/skills/heysummit-intercom-article-audit")
+    let symlinkedCodexSkill = codexSkills.appendingPathComponent("heysummit-intercom-article-audit")
+    let destination = root.appendingPathComponent("Backup", isDirectory: true)
+
+    try fileManager.createDirectory(at: codexSkills, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: agentsSkill, withIntermediateDirectories: true)
+    try "audit skill".write(
+        to: agentsSkill.appendingPathComponent("SKILL.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "notes".write(
+        to: agentsSkill.appendingPathComponent("README.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try fileManager.createSymbolicLink(at: symlinkedCodexSkill, withDestinationURL: agentsSkill)
+
+    let result = try BackupService(fileManager: fileManager).runBackup(
+        settings: BackupSettings(destinationRootPath: destination.path, enabledItemIDs: ["codex-skills"]),
+        items: DefaultBackupItems.items(homeDirectory: root, fileManager: fileManager),
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
+    #expect(fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/README.md").path))
+    #expect(result.manifest.files.contains {
+        $0.backupRelativePath == "Codex/skills/heysummit-intercom-article-audit/SKILL.md"
+    })
+
+    let extractedArchive = root.appendingPathComponent("Extracted", isDirectory: true)
+    try PayloadArchive.extract(
+        archiveURL: result.latestURL.appendingPathComponent(PayloadArchive.fileName),
+        to: extractedArchive
+    )
+    #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
+}
+
 @Test func backupRefreshesStableLatestFolderAndRemovesStaleFiles() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

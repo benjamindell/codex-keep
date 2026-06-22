@@ -1,6 +1,7 @@
-# Codex Keep 0.1.28
+# Codex Keep 0.1.29
 
-Brings Sparkle update windows to the front when checking for updates.
+Fixes backups for Codex skills that are symlinked to another local skills folder.
 
-- Activates Codex Keep before opening Sparkle's update UI.
-- Re-activates the app when Sparkle is about to show update alerts.
+- Copies symlinked skill directories as real folder content in the backup.
+- Includes those skill files in the manifest and payload archive so peer sync can install them.
+- Adds regression coverage for symlinked Codex skills.
