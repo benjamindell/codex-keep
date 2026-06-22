@@ -50,6 +50,8 @@ Use `Manage Automations...` to move local automations to another trusted Mac. Co
 
 The target Mac installs pending incoming moves automatically before its next backup run, using only the automation IDs listed in the approved move manifest. `Manage Automations...` also shows pending incoming moves and can install them manually. If an installed automation replaces an existing local automation, Codex Keep saves an automation move safety snapshot on the target Mac first. Automations are still excluded from trusted-machine sync, so scheduled jobs do not duplicate across Macs.
 
+Each backup run writes phase diagnostics to `~/Library/Logs/Codex Keep/last-run.log` so long-running saves can be traced to the exact step.
+
 ## Development
 
 ```sh

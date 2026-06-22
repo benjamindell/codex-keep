@@ -449,6 +449,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let minimumSyncIndicatorDuration = minimumSyncIndicatorDuration
 
         Task.detached {
+            Self.resetBackupRunLog()
+            Self.logBackupPhase("Backup run started")
             let result = Result {
                 try Self.runBackupAndPeerSync(settings: settings)
             }
@@ -855,21 +857,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let peerSyncService = PeerSyncService()
         let automationMoveService = AutomationMoveService()
         var workingSettings = settings
+        logBackupPhase("Checking pending automation moves")
         _ = try automationMoveService.consumePendingMoves(settings: workingSettings)
+        logBackupPhase("Running local backup")
         var backupResult = try backupService.runBackup(settings: workingSettings)
 
+        logBackupPhase("Recording local sync state")
         let settingsAfterLocalState = peerSyncService.settingsByRecordingLocalState(
             workingSettings,
             localManifest: backupResult.manifest
         )
         if settingsAfterLocalState != workingSettings {
             workingSettings = settingsAfterLocalState
+            logBackupPhase("Refreshing backup after local sync state changed")
             backupResult = try backupService.runBackup(settings: workingSettings)
         }
 
         var peerSyncResult: PeerSyncApplyResult?
         if workingSettings.automaticallySyncTrustedMachines,
            !workingSettings.trustedMachineNames.isEmpty {
+            logBackupPhase("Planning trusted-machine sync")
             let plans = try peerSyncService.makePlans(
                 settings: workingSettings,
                 localManifest: backupResult.manifest
@@ -881,6 +888,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
             let automaticItemIDs = Set(plans.flatMap(\.automaticItemIDs))
             if !automaticItemIDs.isEmpty {
+                logBackupPhase("Applying \(automaticItemIDs.count) automatic peer sync items")
                 let applied = try peerSyncService.apply(
                     plans: plans,
                     selectedItemIDs: automaticItemIDs,
@@ -888,17 +896,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
                 workingSettings = applied.updatedSettings
                 peerSyncResult = applied
+                logBackupPhase("Refreshing backup after peer sync")
                 backupResult = try backupService.runBackup(settings: workingSettings)
             } else if workingSettings != settingsAfterLocalState {
+                logBackupPhase("Refreshing backup after unchanged peer files")
                 backupResult = try backupService.runBackup(settings: workingSettings)
             }
         }
 
+        logBackupPhase("Backup run finished")
         return BackupAndPeerSyncResult(
             backupResult: backupResult,
             peerSyncResult: peerSyncResult,
             updatedSettings: workingSettings
         )
+    }
+
+    nonisolated private static func resetBackupRunLog() {
+        let url = backupRunLogURL()
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? "".write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    nonisolated private static func logBackupPhase(_ message: String) {
+        let formatter = ISO8601DateFormatter()
+        let line = "\(formatter.string(from: Date())) \(message)\n"
+        let url = backupRunLogURL()
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(line.utf8))
+        } else {
+            try? line.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    nonisolated private static func backupRunLogURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("Codex Keep", isDirectory: true)
+            .appendingPathComponent("last-run.log")
     }
 }
 

@@ -261,7 +261,16 @@ public final class AutomationMoveService {
         do {
             let manifests = moveURLs.compactMap { url -> (URL, AutomationMoveManifest)? in
                 try? fileManager.startDownloadingUbiquitousItem(at: url)
+                try? fileManager.startDownloadingUbiquitousItem(at: url.appendingPathComponent("manifest.json"))
+                guard isReadyForImmediateRead(url.appendingPathComponent("manifest.json")) else {
+                    return nil
+                }
+
                 guard let manifest = try? readMoveManifest(at: url) else {
+                    return nil
+                }
+
+                guard movePackageIsReady(moveURL: url, manifest: manifest) else {
                     return nil
                 }
 
@@ -340,6 +349,11 @@ public final class AutomationMoveService {
             }
 
             try? fileManager.startDownloadingUbiquitousItem(at: url)
+            try? fileManager.startDownloadingUbiquitousItem(at: url.appendingPathComponent("manifest.json"))
+            guard isReadyForImmediateRead(url.appendingPathComponent("manifest.json")) else {
+                return nil
+            }
+
             guard let manifest = try? readMoveManifest(at: url) else {
                 return nil
             }
@@ -361,6 +375,66 @@ public final class AutomationMoveService {
 
             return first.id.localizedStandardCompare(second.id) == .orderedAscending
         }
+    }
+
+    private func movePackageIsReady(moveURL: URL, manifest: AutomationMoveManifest) -> Bool {
+        manifest.automations.allSatisfy { item in
+            let automationURL = moveURL
+                .appendingPathComponent("Automations", isDirectory: true)
+                .appendingPathComponent(item.id, isDirectory: true)
+
+            try? fileManager.startDownloadingUbiquitousItem(at: automationURL)
+            return directoryIsReadyForImmediateRead(automationURL)
+        }
+    }
+
+    private func directoryIsReadyForImmediateRead(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return false
+        }
+
+        guard let enumerator = fileManager.enumerator(
+            at: url,
+            includingPropertiesForKeys: [
+                .isRegularFileKey,
+                .isUbiquitousItemKey,
+                .ubiquitousItemDownloadingStatusKey
+            ],
+            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+        ) else {
+            return true
+        }
+
+        for case let childURL as URL in enumerator {
+            guard (try? childURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+                continue
+            }
+
+            try? fileManager.startDownloadingUbiquitousItem(at: childURL)
+            guard isReadyForImmediateRead(childURL) else {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private func isReadyForImmediateRead(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return false
+        }
+
+        guard let values = try? url.resourceValues(forKeys: [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey
+        ]),
+              values.isUbiquitousItem == true
+        else {
+            return true
+        }
+
+        return values.ubiquitousItemDownloadingStatus == .current
+            || values.ubiquitousItemDownloadingStatus == .downloaded
     }
 
     private func createPendingMove(
