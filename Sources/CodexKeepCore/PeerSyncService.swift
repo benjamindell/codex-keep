@@ -136,12 +136,13 @@ public final class PeerSyncService {
         let localFiles = Dictionary(uniqueKeysWithValues: localManifest.files.map { ($0.backupRelativePath, $0) })
         var updated = settings
 
-        for file in localManifest.files {
+        for file in localManifest.files where isSyncableBackupPath(file.backupRelativePath) {
             updated.syncTombstones.removeValue(forKey: file.backupRelativePath)
         }
 
         for (backupRelativePath, state) in settings.syncStates where state.sha256 != nil {
-            guard isManaged(backupRelativePath: backupRelativePath, by: enabledDestinationPaths),
+            guard isSyncableBackupPath(backupRelativePath),
+                  isManaged(backupRelativePath: backupRelativePath, by: enabledDestinationPaths),
                   localFiles[backupRelativePath] == nil
             else {
                 continue
@@ -181,11 +182,12 @@ public final class PeerSyncService {
                 .appendingPathComponent(peerName, isDirectory: true)
                 .appendingPathComponent("latest", isDirectory: true)
             let manifest = try readManifest(at: sourceURL)
-            let peerFiles = Dictionary(uniqueKeysWithValues: manifest.files.map { ($0.backupRelativePath, $0) })
+            let syncablePeerFiles = manifest.files.filter { isSyncableBackupPath($0.backupRelativePath) }
+            let peerFiles = Dictionary(uniqueKeysWithValues: syncablePeerFiles.map { ($0.backupRelativePath, $0) })
             let peerTombstones = Dictionary(uniqueKeysWithValues: manifest.tombstones.map { ($0.backupRelativePath, $0) })
             var planItems: [PeerSyncPlanItem] = []
 
-            for peerFile in manifest.files {
+            for peerFile in syncablePeerFiles {
                 guard let targetURL = targetURL(
                     for: peerFile.backupRelativePath,
                     items: enabledItems
@@ -219,6 +221,10 @@ public final class PeerSyncService {
             }
 
             for tombstone in peerTombstones.values where peerFiles[tombstone.backupRelativePath] == nil {
+                guard isSyncableBackupPath(tombstone.backupRelativePath) else {
+                    continue
+                }
+
                 guard let targetURL = targetURL(
                     for: tombstone.backupRelativePath,
                     items: enabledItems
@@ -442,6 +448,12 @@ public final class PeerSyncService {
 
     private func shouldReviewPeerDeletion(syncedState: SyncFileState?) -> Bool {
         syncedState?.sha256 != nil
+    }
+
+    private func isSyncableBackupPath(_ backupRelativePath: String) -> Bool {
+        !backupRelativePath
+            .split(separator: "/")
+            .contains(".DS_Store")
     }
 
     private func targetURL(for backupRelativePath: String, items: [BackupItem]) -> URL? {

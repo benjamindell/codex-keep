@@ -85,6 +85,11 @@ import Testing
         atomically: true,
         encoding: .utf8
     )
+    try "finder metadata".write(
+        to: customSkill.appendingPathComponent(".DS_Store"),
+        atomically: true,
+        encoding: .utf8
+    )
     try "dependency".write(
         to: customSkillNodeModules.appendingPathComponent("cli.js"),
         atomically: true,
@@ -115,12 +120,14 @@ import Testing
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/.run-jitter-salt").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/social-presence/social-log.md").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/.DS_Store").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/.system/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/node_modules/playwright-core/cli.js").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Agents/skills/marketing-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: ".codex").path))
     #expect(fileManager.fileExists(atPath: latest.appendingPathComponent("manifest.json").path))
     #expect(fileManager.fileExists(atPath: snapshot.appending(relativePath: "Codex/automations/automation.toml").path))
+    #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".DS_Store") })
 }
 
 @Test func backupRefreshesStableLatestFolderAndRemovesStaleFiles() throws {

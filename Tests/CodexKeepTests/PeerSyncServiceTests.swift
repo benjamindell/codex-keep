@@ -15,6 +15,7 @@ import Testing
     #expect(items["Codex/skills/conflict/SKILL.md"]?.status == .conflict)
     #expect(items["Codex/skills/local-only/SKILL.md"]?.status == .localChanged)
     #expect(items["Codex/skills/deleted/SKILL.md"]?.status == .peerDeletedReviewRequired)
+    #expect(items["Codex/skills/shared/.DS_Store"] == nil)
 }
 
 @Test func peerSyncAppliesSafeChangesCopiesConflictsAndSnapshotsDeletes() throws {
@@ -88,6 +89,7 @@ private final class PeerSyncFixture {
         try writePeerSkill("new", content: "peer new")
         try writePeerSkill("conflict", content: "peer conflict")
         try writePeerSkill("local-only", content: "base")
+        try writePeerFile("shared/.DS_Store", content: "finder metadata")
 
         var initialSettings = BackupSettings(
             destinationRootPath: destination.path,
@@ -153,8 +155,14 @@ private final class PeerSyncFixture {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    private func writePeerFile(_ relativePath: String, content: String) throws {
+        let url = peerLatest.appending(relativePath: "Codex/skills/\(relativePath)")
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func writePeerManifest() throws {
-        let files = try ["shared", "new", "conflict", "local-only"].map { name in
+        var files = try ["shared", "new", "conflict", "local-only"].map { name in
             let url = peerLatest.appending(relativePath: "Codex/skills/\(name)/SKILL.md")
             return BackupManifestFile(
                 itemID: "codex-skills",
@@ -167,6 +175,17 @@ private final class PeerSyncFixture {
                 modifiedAt: Date(timeIntervalSince1970: 0)
             )
         }
+        let metadataURL = peerLatest.appending(relativePath: "Codex/skills/shared/.DS_Store")
+        files.append(BackupManifestFile(
+            itemID: "codex-skills",
+            itemDisplayName: "Custom Codex skills",
+            relativePath: "shared/.DS_Store",
+            backupRelativePath: "Codex/skills/shared/.DS_Store",
+            sourcePath: "/peer/.codex/skills/shared/.DS_Store",
+            byteCount: UInt64((try Data(contentsOf: metadataURL)).count),
+            sha256: try fileSHA256(metadataURL),
+            modifiedAt: Date(timeIntervalSince1970: 0)
+        ))
 
         let manifest = BackupManifest(
             appName: "Codex Keep",

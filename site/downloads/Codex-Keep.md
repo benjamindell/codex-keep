@@ -1,9 +1,9 @@
-# Codex Keep 0.1.11
+# Codex Keep 0.1.12
 
-Replaces the Trusted Machines alert with a proper settings window.
+Fixes peer sync failures caused by Finder `.DS_Store` metadata files.
 
-- Shows one row for each available peer machine.
-- Uses a right-aligned switch for enabling or disabling each trusted machine.
-- Keeps the backup folder path compact and easy to open.
-- Keeps the iCloud peer discovery fix from 0.1.10.
+- Excludes `.DS_Store` from future backups and file-level sync manifests.
+- Ignores `.DS_Store` entries that may already exist in older peer manifests.
+- Stops stale `.DS_Store` sync tombstones from being republished.
+- Keeps the Trusted Machines settings window from 0.1.11.
 - Keeps trusted-machine sync from 0.1.8: file-level review, automatic non-conflicting updates, conflict copies, deletion review, tombstones, and sync safety snapshots.
