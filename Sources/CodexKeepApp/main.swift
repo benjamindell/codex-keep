@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var timer: Timer?
     private var animationTimer: Timer?
+    private var trustedMachinesWindowController: NSWindowController?
     private var lastResult: BackupResult?
     private var lastPeerSyncResult: PeerSyncApplyResult?
     private var lastError: Error?
@@ -218,49 +219,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func configureTrustedMachines() {
         let availablePeers = peerSyncService.availablePeerMachineNames(settings: settingsStore.settings)
-
-        let alert = NSAlert()
-        alert.messageText = "Trusted Machines"
-        alert.informativeText = trustedMachinesMessage(machineNames: availablePeers)
-
-        if availablePeers.isEmpty {
-            alert.addButton(withTitle: "OK")
-            alert.addButton(withTitle: "Open Backup Folder")
-
-            if alert.runModal() == .alertSecondButtonReturn {
-                NSWorkspace.shared.open(URL(fileURLWithPath: settingsStore.settings.destinationRootPath))
-            }
-
-            return
-        }
-
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-
-        let checklist = trustedMachinesChecklistView(machineNames: availablePeers)
-        alert.accessoryView = checklist.view
-
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            return
-        }
-
-        let selectedMachineNames = Set(checklist.checkboxes.compactMap { machineName, checkbox in
-            checkbox.state == .on ? machineName : nil
-        })
-
-        do {
-            try settingsStore.update { settings in
-                settings.trustedMachineNames = selectedMachineNames
-                if selectedMachineNames.isEmpty {
-                    settings.automaticallySyncTrustedMachines = false
+        let view = TrustedMachinesView(
+            machineNames: availablePeers,
+            selectedMachineNames: settingsStore.settings.trustedMachineNames,
+            backupFolderPath: settingsStore.settings.destinationRootPath,
+            currentMachineName: Machine.currentName(),
+            onSelectionChange: { [weak self] selectedMachineNames in
+                Task { @MainActor in
+                    self?.saveTrustedMachineSelection(selectedMachineNames)
                 }
-            }
-        } catch {
-            lastError = error
-            presentError(error, messageText: "Codex Keep could not save trusted machines.")
-        }
+            },
+            onOpenBackupFolder: { [weak self] in
+                guard let self else {
+                    return
+                }
 
-        rebuildMenu()
+                NSWorkspace.shared.open(URL(fileURLWithPath: self.settingsStore.settings.destinationRootPath))
+            }
+        )
+        let hostingController = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "Trusted Machines"
+        window.styleMask = [.titled, .closable]
+        window.isReleasedWhenClosed = false
+        window.setContentSize(NSSize(width: 560, height: availablePeers.isEmpty ? 300 : min(520, 238 + availablePeers.count * 54)))
+        window.center()
+
+        let controller = NSWindowController(window: window)
+        trustedMachinesWindowController = controller
+        controller.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func deployBackupToThisMac() {
@@ -311,6 +299,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             lastError = error
             presentError(error, messageText: "Codex Keep could not update Launch at Login.")
+        }
+
+        rebuildMenu()
+    }
+
+    private func saveTrustedMachineSelection(_ selectedMachineNames: Set<String>) {
+        do {
+            try settingsStore.update { settings in
+                settings.trustedMachineNames = selectedMachineNames
+                if selectedMachineNames.isEmpty {
+                    settings.automaticallySyncTrustedMachines = false
+                }
+            }
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not save trusted machines.")
         }
 
         rebuildMenu()
@@ -547,49 +551,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return lines.joined(separator: "\n\n")
     }
 
-    private func trustedMachinesChecklistView(machineNames: [String]) -> (view: NSView, checkboxes: [(String, NSButton)]) {
-        let stackView = NSStackView()
-        stackView.orientation = .vertical
-        stackView.alignment = .leading
-        stackView.spacing = 6
-        stackView.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
-
-        var checkboxes: [(String, NSButton)] = []
-
-        for machineName in machineNames {
-            let checkbox = NSButton(checkboxWithTitle: machineName, target: nil, action: nil)
-            checkbox.state = settingsStore.settings.trustedMachineNames.contains(machineName) ? .on : .off
-            checkboxes.append((machineName, checkbox))
-            stackView.addArrangedSubview(checkbox)
-        }
-
-        if machineNames.isEmpty {
-            let label = NSTextField(labelWithString: "Run Codex Keep on another Mac using the same backup folder, then come back here.")
-            label.maximumNumberOfLines = 0
-            label.widthAnchor.constraint(lessThanOrEqualToConstant: 420).isActive = true
-            stackView.addArrangedSubview(label)
-        }
-
-        return (stackView, checkboxes)
-    }
-
-    private func trustedMachinesMessage(machineNames: [String]) -> String {
-        if machineNames.isEmpty {
-            return [
-                "No other Codex Keep machine backups were found in the selected backup folder yet.",
-                "Backup folder: \(settingsStore.settings.destinationRootPath)",
-                "This Mac is backing up as: \(Machine.currentName())",
-                "Run Codex Keep on the other Mac using the same backup folder, then come back here."
-            ].joined(separator: "\n\n")
-        }
-
-        return [
-            "Choose which machine backups this Mac should review and sync from.",
-            "Backup folder: \(settingsStore.settings.destinationRootPath)",
-            "This Mac is backing up as: \(Machine.currentName())"
-        ].joined(separator: "\n\n")
-    }
-
     private func presentPeerSyncPlans(_ plans: [PeerSyncPlan]) -> Set<String>? {
         let visibleItems = plans.flatMap { plan in
             plan.items.filter { item in
@@ -816,6 +777,150 @@ private struct BackupAndPeerSyncResult: Sendable {
     var backupResult: BackupResult
     var peerSyncResult: PeerSyncApplyResult?
     var updatedSettings: BackupSettings
+}
+
+private struct TrustedMachinesView: View {
+    var machineNames: [String]
+    var backupFolderPath: String
+    var currentMachineName: String
+    var onSelectionChange: (Set<String>) -> Void
+    var onOpenBackupFolder: () -> Void
+
+    @State private var selectedMachineNames: Set<String>
+
+    init(
+        machineNames: [String],
+        selectedMachineNames: Set<String>,
+        backupFolderPath: String,
+        currentMachineName: String,
+        onSelectionChange: @escaping (Set<String>) -> Void,
+        onOpenBackupFolder: @escaping () -> Void
+    ) {
+        self.machineNames = machineNames
+        self.backupFolderPath = backupFolderPath
+        self.currentMachineName = currentMachineName
+        self.onSelectionChange = onSelectionChange
+        self.onOpenBackupFolder = onOpenBackupFolder
+        self._selectedMachineNames = State(initialValue: selectedMachineNames)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+
+            if machineNames.isEmpty {
+                emptyState
+            } else {
+                machineList
+            }
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Backup folder")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(backupFolderPath)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+
+                Spacer()
+
+                Button("Open Folder", action: onOpenBackupFolder)
+            }
+        }
+        .padding(24)
+        .frame(minWidth: 520, maxWidth: 520, alignment: .topLeading)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Trusted Machines")
+                .font(.title2.weight(.semibold))
+
+            Text("Choose which machine backups this Mac should review and sync from.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Text("This Mac: \(currentMachineName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No peer machine backups found")
+                .font(.headline)
+            Text("Run Codex Keep on another Mac using this same backup folder, then come back here.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var machineList: some View {
+        VStack(spacing: 0) {
+            ForEach(machineNames, id: \.self) { machineName in
+                machineRow(machineName)
+
+                if machineName != machineNames.last {
+                    Divider()
+                        .padding(.leading, 12)
+                }
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+    }
+
+    private func machineRow(_ machineName: String) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(machineName)
+                    .font(.body.weight(.medium))
+                Text("Review and sync from this backup")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: binding(for: machineName))
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    private func binding(for machineName: String) -> Binding<Bool> {
+        Binding(
+            get: {
+                selectedMachineNames.contains(machineName)
+            },
+            set: { isSelected in
+                if isSelected {
+                    selectedMachineNames.insert(machineName)
+                } else {
+                    selectedMachineNames.remove(machineName)
+                }
+
+                onSelectionChange(selectedMachineNames)
+            }
+        )
+    }
 }
 
 let app = NSApplication.shared
