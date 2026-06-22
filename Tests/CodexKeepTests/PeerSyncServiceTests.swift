@@ -49,6 +49,22 @@ import Testing
     #expect(result.updatedSettings.syncTombstones["Codex/skills/deleted/SKILL.md"] != nil)
 }
 
+@Test func peerDiscoveryShowsVisibleMachineFoldersBeforeManifestHydrates() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let peerLatest = root.appending(relativePath: "Ben-s-Mac-Mini/latest")
+    try fileManager.createDirectory(at: peerLatest, withIntermediateDirectories: true)
+
+    let settings = BackupSettings(
+        destinationRootPath: root.path,
+        enabledItemIDs: []
+    )
+
+    #expect(PeerSyncService(fileManager: fileManager).availablePeerMachineNames(settings: settings) == ["Ben-s-Mac-Mini"])
+}
+
 private final class PeerSyncFixture {
     let fileManager = FileManager.default
     let root: URL

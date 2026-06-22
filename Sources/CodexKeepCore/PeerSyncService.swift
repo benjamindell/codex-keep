@@ -115,10 +115,7 @@ public final class PeerSyncService {
                 return nil
             }
 
-            let manifestURL = url
-                .appendingPathComponent("latest", isDirectory: true)
-                .appendingPathComponent("manifest.json")
-            return fileManager.fileExists(atPath: manifestURL.path) ? url.lastPathComponent : nil
+            return hasPeerBackup(at: url) ? url.lastPathComponent : nil
         }
         .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
@@ -382,6 +379,9 @@ public final class PeerSyncService {
 
     private func readManifest(at sourceURL: URL) throws -> BackupManifest {
         let manifestURL = sourceURL.appendingPathComponent("manifest.json")
+        try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
+
         guard let manifestData = try? Data(contentsOf: manifestURL) else {
             throw PeerSyncServiceError.missingPeerManifest(manifestURL.path)
         }
@@ -392,6 +392,20 @@ public final class PeerSyncService {
         }
 
         return manifest
+    }
+
+    private func hasPeerBackup(at machineURL: URL) -> Bool {
+        let latestURL = machineURL.appendingPathComponent("latest", isDirectory: true)
+        let snapshotsURL = machineURL.appendingPathComponent("Snapshots", isDirectory: true)
+        let manifestURL = latestURL.appendingPathComponent("manifest.json")
+
+        try? fileManager.startDownloadingUbiquitousItem(at: machineURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: latestURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
+
+        return fileManager.fileExists(atPath: manifestURL.path)
+            || fileManager.fileExists(atPath: latestURL.path)
+            || fileManager.fileExists(atPath: snapshotsURL.path)
     }
 
     private func fileStatus(

@@ -1,8 +1,7 @@
-# Codex Keep 0.1.9
+# Codex Keep 0.1.10
 
-Clarifies trusted-machine setup when no peer Mac backups have appeared in the selected backup folder yet.
+Fixes trusted-machine discovery for iCloud Drive folders that are visible in Finder before every `latest` manifest has hydrated locally.
 
-- Shows the exact backup folder Codex Keep checked.
-- Shows the current machine name this Mac is backing up as.
-- Replaces the empty Save dialog with OK and Open Backup Folder actions.
+- Shows visible peer machine backup folders instead of hiding them while iCloud is still downloading metadata.
+- Asks iCloud Drive to download peer `latest` and manifest data before reading it.
 - Keeps trusted-machine sync from 0.1.8: file-level review, automatic non-conflicting updates, conflict copies, deletion review, tombstones, and sync safety snapshots.
