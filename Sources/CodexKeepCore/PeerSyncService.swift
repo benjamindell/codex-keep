@@ -451,9 +451,7 @@ public final class PeerSyncService {
     }
 
     private func isSyncableBackupPath(_ backupRelativePath: String) -> Bool {
-        !backupRelativePath
-            .split(separator: "/")
-            .contains(".DS_Store")
+        !BackupPathFilter.shouldExclude(relativePath: backupRelativePath)
     }
 
     private func targetURL(for backupRelativePath: String, items: [BackupItem]) -> URL? {

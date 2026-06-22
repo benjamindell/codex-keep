@@ -330,7 +330,7 @@ public final class BackupService {
     }
 
     private func shouldExclude(relativePath: String, excludedPaths: Set<String>) -> Bool {
-        if shouldAlwaysExclude(relativePath: relativePath) {
+        if BackupPathFilter.shouldExclude(relativePath: relativePath) {
             return true
         }
 
@@ -345,12 +345,6 @@ public final class BackupService {
 
             return false
         }
-    }
-
-    private func shouldAlwaysExclude(relativePath: String) -> Bool {
-        relativePath
-            .split(separator: "/")
-            .contains(".DS_Store")
     }
 
     private func byteCount(for url: URL) throws -> UInt64 {
@@ -399,7 +393,7 @@ public final class BackupService {
             }
 
             let relativePath = String(childPath.dropFirst(rootPath.count + 1))
-            guard !shouldAlwaysExclude(relativePath: relativePath) else {
+            guard !BackupPathFilter.shouldExclude(relativePath: relativePath) else {
                 continue
             }
 
@@ -445,7 +439,7 @@ public final class BackupService {
 
         return settings.syncTombstones.values
             .filter { !copiedPaths.contains($0.backupRelativePath) }
-            .filter { !shouldAlwaysExclude(relativePath: $0.backupRelativePath) }
+            .filter { !BackupPathFilter.shouldExclude(relativePath: $0.backupRelativePath) }
             .sorted { first, second in
                 first.backupRelativePath.localizedStandardCompare(second.backupRelativePath) == .orderedAscending
             }

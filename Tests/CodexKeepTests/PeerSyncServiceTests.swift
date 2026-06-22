@@ -16,6 +16,7 @@ import Testing
     #expect(items["Codex/skills/local-only/SKILL.md"]?.status == .localChanged)
     #expect(items["Codex/skills/deleted/SKILL.md"]?.status == .peerDeletedReviewRequired)
     #expect(items["Codex/skills/shared/.DS_Store"] == nil)
+    #expect(items["Codex/skills/shared/memory.md.tmp"] == nil)
 }
 
 @Test func peerSyncAppliesSafeChangesCopiesConflictsAndSnapshotsDeletes() throws {
@@ -90,6 +91,7 @@ private final class PeerSyncFixture {
         try writePeerSkill("conflict", content: "peer conflict")
         try writePeerSkill("local-only", content: "base")
         try writePeerFile("shared/.DS_Store", content: "finder metadata")
+        try writePeerFile("shared/memory.md.tmp", content: "temporary write")
 
         var initialSettings = BackupSettings(
             destinationRootPath: destination.path,
@@ -184,6 +186,17 @@ private final class PeerSyncFixture {
             sourcePath: "/peer/.codex/skills/shared/.DS_Store",
             byteCount: UInt64((try Data(contentsOf: metadataURL)).count),
             sha256: try fileSHA256(metadataURL),
+            modifiedAt: Date(timeIntervalSince1970: 0)
+        ))
+        let tempURL = peerLatest.appending(relativePath: "Codex/skills/shared/memory.md.tmp")
+        files.append(BackupManifestFile(
+            itemID: "codex-skills",
+            itemDisplayName: "Custom Codex skills",
+            relativePath: "shared/memory.md.tmp",
+            backupRelativePath: "Codex/skills/shared/memory.md.tmp",
+            sourcePath: "/peer/.codex/skills/shared/memory.md.tmp",
+            byteCount: UInt64((try Data(contentsOf: tempURL)).count),
+            sha256: try fileSHA256(tempURL),
             modifiedAt: Date(timeIntervalSince1970: 0)
         ))
 
