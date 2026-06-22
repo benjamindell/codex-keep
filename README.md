@@ -52,6 +52,8 @@ The target Mac installs pending incoming moves automatically before its next bac
 
 Each backup run writes phase diagnostics to `~/Library/Logs/Codex Keep/last-run.log` so long-running saves can be traced to the exact step.
 
+If a backup run takes longer than two minutes, Codex Keep stops the menu-bar spinner, reports the last logged phase, and leaves the diagnostic log available from `Open Diagnostic Log`.
+
 ## Development
 
 ```sh

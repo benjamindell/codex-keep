@@ -1,10 +1,11 @@
-# Codex Keep 0.1.20
+# Codex Keep 0.1.21
 
-Avoids blocking on partially downloaded automation move packages.
+Stops endless saving indicators and exposes diagnostics.
 
-- Skips pending automation moves until their manifest and listed files are locally readable.
-- Requests iCloud downloads for incomplete move packages without blocking the whole backup run.
-- Writes backup phase diagnostics to `~/Library/Logs/Codex Keep/last-run.log`.
+- Adds a two-minute watchdog so the menu bar does not stay in Saving forever.
+- Reports the last logged backup phase when a run times out.
+- Adds `Open Diagnostic Log` to the menu.
+- Keeps non-blocking iCloud automation move handling from 0.1.20.
 - Keeps automatic install for explicitly moved automations from 0.1.19.
 - Keeps automations excluded from trusted-machine sync so scheduled jobs do not duplicate across Macs.
 - Keeps `Manage Automations...` from 0.1.17 for moving selected local automations to another trusted Mac.

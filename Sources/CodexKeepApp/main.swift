@@ -4,6 +4,17 @@ import ServiceManagement
 import Sparkle
 import SwiftUI
 
+private enum CodexKeepAppError: LocalizedError {
+    case backupTimedOut(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .backupTimedOut(phase):
+            "Backup timed out while \(phase)."
+        }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settingsStore = SettingsStore()
@@ -25,6 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var timer: Timer?
     private var animationTimer: Timer?
+    private var backupTimeoutTimer: Timer?
     private var trustedMachinesWindowController: NSWindowController?
     private var manageAutomationsWindowController: NSWindowController?
     private var lastResult: BackupResult?
@@ -32,9 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastError: Error?
     private weak var statusMenuItem: NSMenuItem?
     private var isBackingUp = false
+    private var activeBackupID: UUID?
+    private var currentBackupPhase = "starting backup"
     private var animationFrame = 0
     private let animationFrames = ["|", "/", "-", "\\"]
     private let minimumSyncIndicatorDuration: TimeInterval = 1.25
+    private let backupTimeoutDuration: TimeInterval = 120
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -78,6 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b"))
         menu.addItem(actionItem(title: "Review Peer Changes...", action: #selector(reviewPeerChanges), keyEquivalent: "r"))
         menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
+        menu.addItem(actionItem(title: "Open Diagnostic Log", action: #selector(openDiagnosticLog), keyEquivalent: "l"))
         menu.addItem(actionItem(title: "Deploy Backup to This Mac...", action: #selector(deployBackupToThisMac), keyEquivalent: "d"))
         menu.addItem(actionItem(title: "Trusted Machines...", action: #selector(configureTrustedMachines), keyEquivalent: "t"))
         menu.addItem(actionItem(title: "Manage Automations...", action: #selector(manageAutomations), keyEquivalent: "m"))
@@ -120,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func statusTitle() -> String {
         if isBackingUp {
-            return "Backing up Codex files..."
+            return "Saving: \(currentBackupPhase)"
         }
 
         if let result = lastResult {
@@ -153,6 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openBackupFolder() {
         let destinationURL = URL(fileURLWithPath: settingsStore.settings.destinationRootPath)
         NSWorkspace.shared.open(destinationURL)
+    }
+
+    @objc private func openDiagnosticLog() {
+        NSWorkspace.shared.activateFileViewerSelecting([Self.backupRunLogURL()])
     }
 
     @objc private func reviewPeerChanges() {
@@ -440,8 +460,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         isBackingUp = true
+        let backupID = UUID()
+        activeBackupID = backupID
+        currentBackupPhase = "starting backup"
         lastError = nil
         startSyncAnimation()
+        scheduleBackupTimeout(for: backupID)
         rebuildMenu()
 
         let settings = settingsStore.settings
@@ -462,6 +486,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
 
             await MainActor.run {
+                guard self.activeBackupID == backupID else {
+                    return
+                }
+
+                self.backupTimeoutTimer?.invalidate()
+                self.backupTimeoutTimer = nil
+                self.activeBackupID = nil
                 self.stopSyncAnimation()
                 self.isBackingUp = false
 
@@ -496,6 +527,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func scheduleBackupTimeout(for backupID: UUID) {
+        backupTimeoutTimer?.invalidate()
+        backupTimeoutTimer = Timer.scheduledTimer(withTimeInterval: backupTimeoutDuration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleBackupTimeout(for: backupID)
+            }
+        }
+    }
+
+    private func handleBackupTimeout(for backupID: UUID) {
+        guard activeBackupID == backupID, isBackingUp else {
+            return
+        }
+
+        let phase = Self.lastBackupLogPhase() ?? currentBackupPhase
+        activeBackupID = nil
+        backupTimeoutTimer?.invalidate()
+        backupTimeoutTimer = nil
+        stopSyncAnimation()
+        isBackingUp = false
+        lastResult = nil
+        lastPeerSyncResult = nil
+        lastError = CodexKeepAppError.backupTimedOut(phase)
+        presentError(lastError!, messageText: "Codex Keep is taking too long to finish the backup.")
+        rebuildMenu()
+    }
+
     private func startSyncAnimation() {
         animationFrame = 0
         updateStatusItemForSync()
@@ -509,6 +567,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func advanceSyncAnimation() {
         animationFrame = (animationFrame + 1) % animationFrames.count
+        currentBackupPhase = Self.lastBackupLogPhase() ?? currentBackupPhase
+        statusMenuItem?.title = statusTitle()
         updateStatusItemForSync()
     }
 
@@ -945,6 +1005,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .appendingPathComponent("Logs", isDirectory: true)
             .appendingPathComponent("Codex Keep", isDirectory: true)
             .appendingPathComponent("last-run.log")
+    }
+
+    nonisolated private static func lastBackupLogPhase() -> String? {
+        guard let contents = try? String(contentsOf: backupRunLogURL(), encoding: .utf8) else {
+            return nil
+        }
+
+        return contents
+            .split(separator: "\n")
+            .last
+            .flatMap { line in
+                let parts = line.split(separator: " ", maxSplits: 1)
+                return parts.count == 2 ? String(parts[1]) : String(line)
+            }
     }
 }
 
