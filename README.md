@@ -44,6 +44,12 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 - Peer deletions require review and create tombstones so the deletion can propagate deliberately.
 - Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted.
 
+## Managing automations
+
+Use `Manage Automations...` to move local automations to another trusted Mac. Codex Keep writes a pending move package into the target machine folder, saves an `Automation Move Safety` snapshot on the source Mac, and then removes the selected local automation folders.
+
+The target Mac installs pending automation moves before its next backup run. If an installed automation replaces an existing local automation, Codex Keep saves an automation move safety snapshot on the target Mac first. Automations are still excluded from trusted-machine sync, so scheduled jobs do not duplicate across Macs.
+
 ## Development
 
 ```sh

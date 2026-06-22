@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let backupService = BackupService()
     private let deployService = DeployService()
     private let peerSyncService = PeerSyncService()
+    private let automationMoveService = AutomationMoveService()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -25,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timer: Timer?
     private var animationTimer: Timer?
     private var trustedMachinesWindowController: NSWindowController?
+    private var manageAutomationsWindowController: NSWindowController?
     private var lastResult: BackupResult?
     private var lastPeerSyncResult: PeerSyncApplyResult?
     private var lastError: Error?
@@ -78,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
         menu.addItem(actionItem(title: "Deploy Backup to This Mac...", action: #selector(deployBackupToThisMac), keyEquivalent: "d"))
         menu.addItem(actionItem(title: "Trusted Machines...", action: #selector(configureTrustedMachines), keyEquivalent: "t"))
+        menu.addItem(actionItem(title: "Manage Automations...", action: #selector(manageAutomations), keyEquivalent: "m"))
         menu.addItem(autoSyncItem())
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
         menu.addItem(.separator())
@@ -283,6 +286,72 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastError = error
             presentError(error, messageText: "Codex Keep could not deploy the backup.")
         }
+    }
+
+    @objc private func manageAutomations() {
+        do {
+            let automations = try automationMoveService.localAutomations()
+            let targetMachineNames = settingsStore.settings.trustedMachineNames.sorted {
+                $0.localizedStandardCompare($1) == .orderedAscending
+            }
+            let view = ManageAutomationsView(
+                automations: automations,
+                targetMachineNames: targetMachineNames,
+                currentMachineName: Machine.currentName(),
+                backupFolderPath: settingsStore.settings.destinationRootPath,
+                onMove: { [weak self] selectedIDs, targetMachineName in
+                    Task { @MainActor in
+                        self?.moveAutomations(selectedIDs, to: targetMachineName)
+                    }
+                },
+                onConfigureTrustedMachines: { [weak self] in
+                    Task { @MainActor in
+                        self?.configureTrustedMachines()
+                    }
+                },
+                onOpenBackupFolder: { [weak self] in
+                    guard let self else {
+                        return
+                    }
+
+                    NSWorkspace.shared.open(URL(fileURLWithPath: self.settingsStore.settings.destinationRootPath))
+                }
+            )
+            let hostingController = NSHostingController(rootView: view)
+            let window = NSWindow(contentViewController: hostingController)
+            window.title = "Manage Automations"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 660, height: automations.isEmpty ? 320 : min(620, 300 + automations.count * 54)))
+            window.center()
+
+            let controller = NSWindowController(window: window)
+            manageAutomationsWindowController = controller
+            controller.showWindow(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not load automations.")
+        }
+    }
+
+    private func moveAutomations(_ selectedIDs: Set<String>, to targetMachineName: String) {
+        do {
+            let result = try automationMoveService.moveAutomations(
+                ids: selectedIDs,
+                to: targetMachineName,
+                settings: settingsStore.settings
+            )
+            lastResult = try BackupService().runBackup(settings: settingsStore.settings)
+            manageAutomationsWindowController?.close()
+            manageAutomationsWindowController = nil
+            presentAutomationMoveSuccess(result, targetMachineName: targetMachineName)
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not move automations.")
+        }
+
+        rebuildMenu()
     }
 
     @objc private func checkForUpdates() {
@@ -723,10 +792,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func presentAutomationMoveSuccess(_ result: AutomationMoveResult, targetMachineName: String) {
+        let alert = NSAlert()
+        alert.messageText = "Automations moved"
+        alert.informativeText = "\(result.movedCount) automations were moved to \(targetMachineName). They will be installed there the next time Codex Keep runs on that Mac. Safety snapshot: \(result.safetySnapshotURL.path)"
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open Safety Snapshot")
+
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.open(result.safetySnapshotURL)
+        }
+    }
+
     nonisolated private static func runBackupAndPeerSync(settings: BackupSettings) throws -> BackupAndPeerSyncResult {
         let backupService = BackupService()
         let peerSyncService = PeerSyncService()
+        let automationMoveService = AutomationMoveService()
         var workingSettings = settings
+        _ = try automationMoveService.consumePendingMoves(settings: workingSettings)
         var backupResult = try backupService.runBackup(settings: workingSettings)
 
         let settingsAfterLocalState = peerSyncService.settingsByRecordingLocalState(
@@ -920,6 +1003,199 @@ private struct TrustedMachinesView: View {
                 onSelectionChange(selectedMachineNames)
             }
         )
+    }
+}
+
+private struct ManageAutomationsView: View {
+    var automations: [AutomationSummary]
+    var targetMachineNames: [String]
+    var currentMachineName: String
+    var backupFolderPath: String
+    var onMove: (Set<String>, String) -> Void
+    var onConfigureTrustedMachines: () -> Void
+    var onOpenBackupFolder: () -> Void
+
+    @State private var selectedAutomationIDs: Set<String> = []
+    @State private var selectedTargetMachineName: String
+
+    init(
+        automations: [AutomationSummary],
+        targetMachineNames: [String],
+        currentMachineName: String,
+        backupFolderPath: String,
+        onMove: @escaping (Set<String>, String) -> Void,
+        onConfigureTrustedMachines: @escaping () -> Void,
+        onOpenBackupFolder: @escaping () -> Void
+    ) {
+        self.automations = automations
+        self.targetMachineNames = targetMachineNames
+        self.currentMachineName = currentMachineName
+        self.backupFolderPath = backupFolderPath
+        self.onMove = onMove
+        self.onConfigureTrustedMachines = onConfigureTrustedMachines
+        self.onOpenBackupFolder = onOpenBackupFolder
+        self._selectedTargetMachineName = State(initialValue: targetMachineNames.first ?? "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+
+            if automations.isEmpty {
+                emptyAutomationsState
+            } else {
+                targetPicker
+                automationList
+            }
+
+            Divider()
+
+            footer
+        }
+        .padding(24)
+        .frame(minWidth: 580, maxWidth: 580, alignment: .topLeading)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Manage Automations")
+                .font(.title2.weight(.semibold))
+
+            Text("Move local automations to one trusted Mac so scheduled jobs only live in one place.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            Text("This Mac: \(currentMachineName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var targetPicker: some View {
+        HStack(spacing: 12) {
+            Text("Move to")
+                .font(.body.weight(.medium))
+
+            Picker("Move to", selection: $selectedTargetMachineName) {
+                if targetMachineNames.isEmpty {
+                    Text("No trusted machines").tag("")
+                } else {
+                    ForEach(targetMachineNames, id: \.self) { machineName in
+                        Text(machineName).tag(machineName)
+                    }
+                }
+            }
+            .labelsHidden()
+            .frame(width: 260)
+
+            Spacer()
+
+            if targetMachineNames.isEmpty {
+                Button("Trusted Machines", action: onConfigureTrustedMachines)
+            }
+        }
+    }
+
+    private var emptyAutomationsState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("No local automations found")
+                .font(.headline)
+            Text("This Mac does not currently have automation folders in ~/.codex/automations.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var automationList: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(automations) { automation in
+                    automationRow(automation)
+
+                    if automation.id != automations.last?.id {
+                        Divider()
+                            .padding(.leading, 12)
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: 300)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+    }
+
+    private func automationRow(_ automation: AutomationSummary) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(automation.id)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("\(automation.fileCount) files, \(formattedByteCount(automation.byteCount))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: binding(for: automation.id))
+                .toggleStyle(.switch)
+                .labelsHidden()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    private var footer: some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Backup folder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(backupFolderPath)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+            }
+
+            Spacer()
+
+            Button("Open Folder", action: onOpenBackupFolder)
+
+            Button("Move Selected") {
+                onMove(selectedAutomationIDs, selectedTargetMachineName)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(selectedAutomationIDs.isEmpty || selectedTargetMachineName.isEmpty)
+        }
+    }
+
+    private func binding(for automationID: String) -> Binding<Bool> {
+        Binding(
+            get: {
+                selectedAutomationIDs.contains(automationID)
+            },
+            set: { isSelected in
+                if isSelected {
+                    selectedAutomationIDs.insert(automationID)
+                } else {
+                    selectedAutomationIDs.remove(automationID)
+                }
+            }
+        )
+    }
+
+    private func formattedByteCount(_ byteCount: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file)
     }
 }
 
