@@ -327,14 +327,25 @@ public final class PeerSyncService {
         var deletedItemCount = 0
         var skippedItemCount = 0
         var skippedBackupRelativePaths: [String] = []
+        var extractedPayloads: [String: URL] = [:]
+        let peerDownloadDeadline = Date().addingTimeInterval(30)
+        defer {
+            for url in extractedPayloads.values {
+                try? fileManager.removeItem(at: url)
+            }
+        }
 
         do {
             for (plan, items) in selectedItemsByPlan {
                 for item in items {
                     switch item.status {
                     case .incomingNew, .incomingChanged:
-                        let sourceURL = plan.sourceURL.appendingRelativePath(item.backupRelativePath)
-                        guard preparePeerSourceFile(at: sourceURL) else {
+                        guard let sourceURL = try preparedPeerSourceFile(
+                            plan: plan,
+                            backupRelativePath: item.backupRelativePath,
+                            extractedPayloads: &extractedPayloads,
+                            waitUntil: peerDownloadDeadline
+                        ) else {
                             skippedItemCount += 1
                             skippedBackupRelativePaths.append(item.backupRelativePath)
                             continue
@@ -349,8 +360,12 @@ public final class PeerSyncService {
                         updatedSettings.syncTombstones.removeValue(forKey: item.backupRelativePath)
                         appliedItemCount += 1
                     case .conflict where item.peerSHA256 != nil:
-                        let sourceURL = plan.sourceURL.appendingRelativePath(item.backupRelativePath)
-                        guard preparePeerSourceFile(at: sourceURL) else {
+                        guard let sourceURL = try preparedPeerSourceFile(
+                            plan: plan,
+                            backupRelativePath: item.backupRelativePath,
+                            extractedPayloads: &extractedPayloads,
+                            waitUntil: peerDownloadDeadline
+                        ) else {
                             skippedItemCount += 1
                             skippedBackupRelativePaths.append(item.backupRelativePath)
                             continue
@@ -586,13 +601,77 @@ public final class PeerSyncService {
         return safetySnapshotURL
     }
 
-    private func preparePeerSourceFile(at sourceURL: URL) -> Bool {
+    private func preparedPeerSourceFile(
+        plan: PeerSyncPlan,
+        backupRelativePath: String,
+        extractedPayloads: inout [String: URL],
+        waitUntil deadline: Date
+    ) throws -> URL? {
+        let sourceURL = plan.sourceURL.appendingRelativePath(backupRelativePath)
+        if preparePeerSourceFile(at: sourceURL, waitUntil: Date(), waitForMissingFile: false) {
+            return sourceURL
+        }
+
+        let payloadURL = plan.sourceURL.appendingPathComponent(PayloadArchive.fileName)
+        guard preparePeerSourceFile(
+            at: payloadURL,
+            waitUntil: deadline,
+            waitForMissingFile: isLikelyICloudURL(payloadURL)
+        ) else {
+            return nil
+        }
+
+        let payloadKey = plan.sourceURL.standardizedFileURL.path
+        let extractionURL: URL
+        if let existingURL = extractedPayloads[payloadKey] {
+            extractionURL = existingURL
+        } else {
+            extractionURL = fileManager.temporaryDirectory
+                .appendingPathComponent("codex-keep-peer-\(UUID().uuidString)", isDirectory: true)
+            try PayloadArchive.extract(archiveURL: payloadURL, to: extractionURL)
+            extractedPayloads[payloadKey] = extractionURL
+        }
+
+        let extractedSourceURL = extractionURL.appendingRelativePath(backupRelativePath)
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: extractedSourceURL.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue
+        else {
+            return nil
+        }
+
+        return extractedSourceURL
+    }
+
+    private func preparePeerSourceFile(
+        at sourceURL: URL,
+        waitUntil deadline: Date,
+        waitForMissingFile: Bool
+    ) -> Bool {
         try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
 
-        var isDirectory: ObjCBool = false
-        return fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory)
-            && !isDirectory.boolValue
-            && isReadyForImmediateRead(sourceURL)
+        repeat {
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory),
+               !isDirectory.boolValue,
+               isReadyForImmediateRead(sourceURL) {
+                return true
+            }
+
+            if !waitForMissingFile && !fileManager.fileExists(atPath: sourceURL.path) {
+                return false
+            }
+
+            guard Date() < deadline else {
+                return false
+            }
+
+            Thread.sleep(forTimeInterval: 0.2)
+        } while true
+    }
+
+    private func isLikelyICloudURL(_ url: URL) -> Bool {
+        url.standardizedFileURL.path.contains("/Library/Mobile Documents/")
     }
 
     private func isReadyForImmediateRead(_ url: URL) -> Bool {

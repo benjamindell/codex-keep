@@ -39,6 +39,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 
 - Non-conflicting peer creates and updates are selected by default.
 - Automatic trusted-machine sync applies only non-conflicting file creates and updates.
+- Each backup publishes `.codex-keep-payload.zip` next to `manifest.json` so peer sync can recover files even when iCloud has hydrated the manifest before the individual file tree.
 - Automatic trusted-machine sync skips peer files that are still iCloud placeholders, logs their backup paths, shows the skipped count in the menu, and retries them on a later run after requesting the download.
 - Automations are backed up but excluded from trusted-machine sync so scheduled jobs do not run on multiple Macs.
 - Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.

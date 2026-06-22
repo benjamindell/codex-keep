@@ -77,6 +77,29 @@ import Testing
     #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md").path))
 }
 
+@Test func peerSyncFallsBackToPayloadArchiveWhenPeerTreeIsNotHydrated() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    try fixture.writePeerPayloadArchive()
+    let plans = try fixture.makePlans()
+    let item = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == "Codex/skills/shared/README.md"
+    })
+    try fixture.fileManager.removeItem(at: fixture.peerLatest.appending(relativePath: "Codex/skills/shared/README.md"))
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: plans,
+        selectedItemIDs: [item.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.appliedItemCount == 1)
+    #expect(result.skippedItemCount == 0)
+    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/shared/README.md"), encoding: .utf8) == "peer readme")
+}
+
 @Test func peerSyncSafetySnapshotToleratesDuplicateTargets() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
@@ -197,6 +220,15 @@ private final class PeerSyncFixture {
             localManifest: localManifest,
             homeDirectory: home,
             items: DefaultBackupItems.items(homeDirectory: home, fileManager: fileManager)
+        )
+    }
+
+    func writePeerPayloadArchive() throws {
+        let temporaryArchiveURL = root.appendingPathComponent("peer-payload.zip")
+        try PayloadArchive.create(contentsOf: peerLatest, archiveURL: temporaryArchiveURL)
+        try fileManager.copyItem(
+            at: temporaryArchiveURL,
+            to: peerLatest.appendingPathComponent(PayloadArchive.fileName)
         )
     }
 

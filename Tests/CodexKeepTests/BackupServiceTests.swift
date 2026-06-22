@@ -132,9 +132,18 @@ import Testing
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Agents/skills/marketing-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: ".codex").path))
     #expect(fileManager.fileExists(atPath: latest.appendingPathComponent("manifest.json").path))
+    #expect(fileManager.fileExists(atPath: latest.appendingPathComponent(PayloadArchive.fileName).path))
     #expect(fileManager.fileExists(atPath: snapshot.appending(relativePath: "Codex/automations/automation.toml").path))
+    #expect(fileManager.fileExists(atPath: snapshot.appendingPathComponent(PayloadArchive.fileName).path))
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".DS_Store") })
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".tmp") })
+
+    let extractedArchive = root.appendingPathComponent("Extracted", isDirectory: true)
+    try PayloadArchive.extract(
+        archiveURL: latest.appendingPathComponent(PayloadArchive.fileName),
+        to: extractedArchive
+    )
+    #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
 }
 
 @Test func backupRefreshesStableLatestFolderAndRemovesStaleFiles() throws {

@@ -1,10 +1,11 @@
-# Codex Keep 0.1.23
+# Codex Keep 0.1.24
 
-Shows exactly when trusted-machine sync skipped peer files that are still downloading from iCloud.
+Makes trusted-machine sync resilient when iCloud hydrates `manifest.json` before the peer file tree.
 
-- Logs skipped peer file paths in `~/Library/Logs/Codex Keep/last-run.log`.
-- Shows skipped peer file counts in the menu bar status instead of looking like a clean no-op.
-- Adds regression coverage for syncing a new file inside an existing skill folder.
+- Adds `.codex-keep-payload.zip` beside each backup manifest.
+- Falls back to the payload archive when a peer manifest lists a file but iCloud has not materialized that individual file path locally.
+- Adds regression coverage for manifest-present/tree-missing peer files.
+- Keeps skipped peer path logging from 0.1.23.
 - Keeps iCloud placeholder skipping from 0.1.22 so automatic sync does not hang while waiting for iCloud.
 - Keeps the two-minute watchdog and diagnostic log from 0.1.21.
 - Keeps non-blocking iCloud automation move handling from 0.1.20.

@@ -128,6 +128,7 @@ public final class BackupService {
 
         let manifestData = try encoder.encode(manifest)
         try manifestData.write(to: stagingURL.appendingPathComponent("manifest.json"), options: .atomic)
+        try publishPayloadArchive(from: stagingURL, machineRoot: machineRoot)
         try publishBackupContents(to: latestURL, from: stagingURL)
         try publishDailySnapshot(in: snapshotsURL, from: stagingURL, now: now)
         try pruneDailySnapshots(in: snapshotsURL, keeping: 7)
@@ -137,6 +138,21 @@ public final class BackupService {
         try fileManager.removeItem(at: stagingURL)
 
         return BackupResult(manifest: manifest, latestURL: latestURL)
+    }
+
+    private func publishPayloadArchive(from stagingURL: URL, machineRoot: URL) throws {
+        let temporaryArchiveURL = machineRoot.appendingPathComponent(".payload-\(UUID().uuidString).zip")
+        defer {
+            if fileManager.fileExists(atPath: temporaryArchiveURL.path) {
+                try? fileManager.removeItem(at: temporaryArchiveURL)
+            }
+        }
+
+        try PayloadArchive.create(contentsOf: stagingURL, archiveURL: temporaryArchiveURL)
+        try fileManager.copyItem(
+            at: temporaryArchiveURL,
+            to: stagingURL.appendingPathComponent(PayloadArchive.fileName)
+        )
     }
 
     private func validateDestination(_ destinationURL: URL, isNotInside sourceURL: URL) throws {
