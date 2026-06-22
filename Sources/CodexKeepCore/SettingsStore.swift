@@ -26,7 +26,9 @@ public final class SettingsStore {
            let decoded = try? self.decoder.decode(BackupSettings.self, from: data) {
             var migrated = decoded
             migrated.enabledItemIDs.formUnion(
-                DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager).map(\.id)
+                DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager)
+                    .filter(\.defaultEnabled)
+                    .map(\.id)
             )
             self.settings = migrated
             if migrated != decoded {

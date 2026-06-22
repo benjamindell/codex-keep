@@ -98,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(actionItem(title: "Trusted Machines...", action: #selector(configureTrustedMachines), keyEquivalent: "t"))
         menu.addItem(actionItem(title: "Manage Automations...", action: #selector(manageAutomations), keyEquivalent: "m"))
         menu.addItem(autoSyncItem())
+        menu.addItem(repositoryDevFilesItem())
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(launchAtLoginItem())
@@ -127,6 +128,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func autoSyncItem() -> NSMenuItem {
         let item = actionItem(title: "Auto-sync Trusted Machines", action: #selector(toggleAutoSync), keyEquivalent: "")
         item.state = settingsStore.settings.automaticallySyncTrustedMachines ? .on : .off
+        return item
+    }
+
+    private func repositoryDevFilesItem() -> NSMenuItem {
+        let item = actionItem(title: "Sync Local Repo Dev Files", action: #selector(toggleRepositoryDevFiles), keyEquivalent: "")
+        item.state = settingsStore.settings.syncRepositoryDevFiles ? .on : .off
         return item
     }
 
@@ -464,6 +471,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             lastError = error
             presentError(error, messageText: "Codex Keep could not update auto-sync.")
+        }
+
+        rebuildMenu()
+    }
+
+    @objc private func toggleRepositoryDevFiles() {
+        if !settingsStore.settings.syncRepositoryDevFiles {
+            let alert = NSAlert()
+            alert.messageText = "Sync local repo dev files?"
+            alert.informativeText = "Codex Keep will back up and sync root .env files for Git repositories that exist on both trusted Macs. Repositories that do not exist locally on another Mac are skipped."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Enable")
+            alert.addButton(withTitle: "Cancel")
+
+            guard alert.runModal() == .alertFirstButtonReturn else {
+                return
+            }
+        }
+
+        do {
+            try settingsStore.update { settings in
+                settings.syncRepositoryDevFiles.toggle()
+            }
+            runBackup()
+        } catch {
+            presentError(error, messageText: "Codex Keep could not update local repo dev file sync.")
         }
 
         rebuildMenu()

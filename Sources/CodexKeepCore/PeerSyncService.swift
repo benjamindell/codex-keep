@@ -132,7 +132,7 @@ public final class PeerSyncService {
         let restoreItems = items ?? DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager)
         let enabledDestinationPaths = Set(
             restoreItems
-                .filter { settings.enabledItemIDs.contains($0.id) }
+                .filter { settings.isEnabled($0) }
                 .map(\.destinationPath)
         )
         let localFiles = Dictionary(uniqueKeysWithValues: localManifest.files.map { ($0.backupRelativePath, $0) })
@@ -175,7 +175,7 @@ public final class PeerSyncService {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
         let restoreItems = items ?? DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager)
-        let enabledItems = restoreItems.filter { settings.enabledItemIDs.contains($0.id) }
+        let enabledItems = restoreItems.filter { settings.isEnabled($0) }
         let localFiles = Dictionary(uniqueKeysWithValues: localManifest.files.map { ($0.backupRelativePath, $0) })
 
         return try peerNames.map { peerName in

@@ -19,6 +19,7 @@ The first version is deliberately conservative:
 - `~/.codex/config.toml` to `Codex/config.toml`
 - `~/.codex/rules` to `Codex/rules`
 - `~/.codex/skills` to `Codex/skills`, excluding bundled/system skills
+- Optional local repo dev files to `Git Repos/<repo identity>`, currently root `.env` and `.env.*` files, excluding examples/templates
 - Markdown-backed top-level `~/.codex` folders to `Codex/<folder>`, excluding known cache, session, log, plugin, database, and worktree folders
 - `~/.agents/skills` to `Agents/skills`
 
@@ -42,6 +43,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 - Each backup publishes `.codex-keep-payload.zip` next to `manifest.json` so peer sync can recover files even when iCloud has hydrated the manifest before the individual file tree.
 - Automatic trusted-machine sync skips peer files that are still iCloud placeholders, logs their backup paths, shows the skipped count in the menu, and retries them on a later run after requesting the download.
 - Automations are backed up but excluded from trusted-machine sync so scheduled jobs do not run on multiple Macs.
+- `Sync Local Repo Dev Files` is opt-in. When enabled, Codex Keep backs up root `.env` files from discovered Git repositories and syncs them only to trusted Macs that already have the same repository checkout.
 - Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.
 - Peer deletions require review and create tombstones so the deletion can propagate deliberately.
 - Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted.

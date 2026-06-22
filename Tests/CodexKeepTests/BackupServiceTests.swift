@@ -37,6 +37,59 @@ import Testing
     #expect(itemPaths.contains { $0.hasSuffix("/.agents/skills") })
 }
 
+@Test func repositoryDevFilesAreOptInAndCopyOnlyLocalEnvFiles() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let repository = root.appending(relativePath: "Repositories/example-app")
+    let destination = root.appendingPathComponent("Backup", isDirectory: true)
+    try writeGitConfig(
+        in: repository,
+        originURL: "git@github.com:example/example-app.git",
+        fileManager: fileManager
+    )
+    try "secret".write(to: repository.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+    try "local".write(to: repository.appendingPathComponent(".env.local"), atomically: true, encoding: .utf8)
+    try "example".write(to: repository.appendingPathComponent(".env.example"), atomically: true, encoding: .utf8)
+    try fileManager.createDirectory(at: repository.appendingPathComponent(".build", isDirectory: true), withIntermediateDirectories: true)
+    try "nested".write(to: repository.appending(relativePath: ".build/.env"), atomically: true, encoding: .utf8)
+
+    let items = DefaultBackupItems.items(homeDirectory: root, fileManager: fileManager)
+    let repoItem = try #require(items.first { $0.id == "git-repo-dev-github.com-example-example-app" })
+    #expect(repoItem.displayName == "Local repo dev files: example-app")
+    #expect(repoItem.defaultEnabled == false)
+
+    let disabledSettings = BackupSettings(
+        destinationRootPath: destination.path,
+        enabledItemIDs: Set(items.filter(\.defaultEnabled).map(\.id))
+    )
+    let disabledResult = try BackupService(fileManager: fileManager).runBackup(
+        settings: disabledSettings,
+        items: items,
+        now: Date(timeIntervalSince1970: 0)
+    )
+    #expect(!disabledResult.manifest.files.contains { $0.backupRelativePath.contains("Git Repos/") })
+
+    let enabledSettings = BackupSettings(
+        destinationRootPath: destination.path,
+        enabledItemIDs: Set(items.filter(\.defaultEnabled).map(\.id)),
+        syncRepositoryDevFiles: true
+    )
+    let enabledResult = try BackupService(fileManager: fileManager).runBackup(
+        settings: enabledSettings,
+        items: items,
+        now: Date(timeIntervalSince1970: 1)
+    )
+
+    #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env").path))
+    #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env.local").path))
+    #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env.example").path))
+    #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.build/.env").path))
+    #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env" })
+    #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env.local" })
+}
+
 @Test func backupCopiesOnlyEnabledItemsAndRespectsExclusions() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -258,9 +311,15 @@ import Testing
 
     let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
     let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
+    let repository = root.appending(relativePath: "Repositories/example-app")
     let settingsURL = root.appending(relativePath: "Application Support/Codex Keep/settings.json")
 
     try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
+    try writeGitConfig(
+        in: repository,
+        originURL: "git@github.com:example/example-app.git",
+        fileManager: fileManager
+    )
     try "keep".write(
         to: socialPresence.appendingPathComponent("social-log.md"),
         atomically: true,
@@ -283,6 +342,17 @@ import Testing
 
     #expect(store.settings.enabledItemIDs.contains("codex-automations"))
     #expect(store.settings.enabledItemIDs.contains("codex-markdown-social-presence"))
+    #expect(!store.settings.enabledItemIDs.contains("git-repo-dev-github.com-example-example-app"))
+    #expect(store.settings.syncRepositoryDevFiles == false)
+}
+
+private func writeGitConfig(in repository: URL, originURL: String, fileManager: FileManager) throws {
+    let gitDirectory = repository.appendingPathComponent(".git", isDirectory: true)
+    try fileManager.createDirectory(at: gitDirectory, withIntermediateDirectories: true)
+    try """
+    [remote "origin"]
+        url = \(originURL)
+    """.write(to: gitDirectory.appendingPathComponent("config"), atomically: true, encoding: .utf8)
 }
 
 private extension URL {

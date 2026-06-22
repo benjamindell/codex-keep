@@ -100,6 +100,30 @@ import Testing
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/shared/README.md"), encoding: .utf8) == "peer readme")
 }
 
+@Test func peerSyncOnlyPlansRepositoryDevFilesForMatchingLocalRepos() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    fixture.settings.syncRepositoryDevFiles = true
+    try fixture.writePeerRepositoryDevFile()
+
+    var plans = try fixture.makePlans()
+    #expect(!plans.flatMap(\.items).contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env" })
+
+    try writeGitConfig(
+        in: fixture.home.appending(relativePath: "Repositories/example-app"),
+        originURL: "git@github.com:example/example-app.git",
+        fileManager: fixture.fileManager
+    )
+
+    plans = try fixture.makePlans()
+    let item = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env"
+    })
+    #expect(item.status == .incomingNew)
+    #expect(item.targetPath.hasSuffix("/Home/Repositories/example-app/.env"))
+}
+
 @Test func peerSyncSafetySnapshotToleratesDuplicateTargets() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
@@ -232,6 +256,26 @@ private final class PeerSyncFixture {
         )
     }
 
+    func writePeerRepositoryDevFile() throws {
+        let relativePath = "Git Repos/github.com/example/example-app/.env"
+        let url = peerLatest.appending(relativePath: relativePath)
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "SECRET=peer".write(to: url, atomically: true, encoding: .utf8)
+
+        try writePeerManifest(extraFiles: [
+            BackupManifestFile(
+                itemID: "git-repo-dev-github.com-example-example-app",
+                itemDisplayName: "Local repo dev files: example-app",
+                relativePath: ".env",
+                backupRelativePath: relativePath,
+                sourcePath: "/peer/Repositories/example-app/.env",
+                byteCount: UInt64((try Data(contentsOf: url)).count),
+                sha256: try fileSHA256(url),
+                modifiedAt: Date(timeIntervalSince1970: 0)
+            )
+        ])
+    }
+
     private func writeLocalSkill(_ name: String, content: String) throws {
         let url = home.appending(relativePath: ".codex/skills/\(name)/SKILL.md")
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -256,7 +300,7 @@ private final class PeerSyncFixture {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    private func writePeerManifest() throws {
+    private func writePeerManifest(extraFiles: [BackupManifestFile] = []) throws {
         var files = try ["shared", "new", "conflict", "local-only"].map { name in
             let url = peerLatest.appending(relativePath: "Codex/skills/\(name)/SKILL.md")
             return BackupManifestFile(
@@ -314,6 +358,7 @@ private final class PeerSyncFixture {
             sha256: try fileSHA256(automationURL),
             modifiedAt: Date(timeIntervalSince1970: 0)
         ))
+        files.append(contentsOf: extraFiles)
 
         let manifest = BackupManifest(
             appName: "Codex Keep",
@@ -348,6 +393,15 @@ private final class PeerSyncFixture {
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: peerLatest.appendingPathComponent("manifest.json"), options: .atomic)
     }
+}
+
+private func writeGitConfig(in repository: URL, originURL: String, fileManager: FileManager) throws {
+    let gitDirectory = repository.appendingPathComponent(".git", isDirectory: true)
+    try fileManager.createDirectory(at: gitDirectory, withIntermediateDirectories: true)
+    try """
+    [remote "origin"]
+        url = \(originURL)
+    """.write(to: gitDirectory.appendingPathComponent("config"), atomically: true, encoding: .utf8)
 }
 
 private func sha256(_ string: String) -> String {

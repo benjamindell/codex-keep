@@ -6,6 +6,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
     public var backupIntervalMinutes: Int
     public var trustedMachineNames: Set<String>
     public var automaticallySyncTrustedMachines: Bool
+    public var syncRepositoryDevFiles: Bool
     public var syncStates: [String: SyncFileState]
     public var syncTombstones: [String: SyncTombstone]
 
@@ -15,6 +16,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         backupIntervalMinutes: Int = 30,
         trustedMachineNames: Set<String> = [],
         automaticallySyncTrustedMachines: Bool = false,
+        syncRepositoryDevFiles: Bool = false,
         syncStates: [String: SyncFileState] = [:],
         syncTombstones: [String: SyncTombstone] = [:]
     ) {
@@ -23,6 +25,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         self.backupIntervalMinutes = backupIntervalMinutes
         self.trustedMachineNames = trustedMachineNames
         self.automaticallySyncTrustedMachines = automaticallySyncTrustedMachines
+        self.syncRepositoryDevFiles = syncRepositoryDevFiles
         self.syncStates = syncStates
         self.syncTombstones = syncTombstones
     }
@@ -33,6 +36,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         case backupIntervalMinutes
         case trustedMachineNames
         case automaticallySyncTrustedMachines
+        case syncRepositoryDevFiles
         case syncStates
         case syncTombstones
     }
@@ -44,6 +48,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         self.backupIntervalMinutes = try container.decodeIfPresent(Int.self, forKey: .backupIntervalMinutes) ?? 30
         self.trustedMachineNames = try container.decodeIfPresent(Set<String>.self, forKey: .trustedMachineNames) ?? []
         self.automaticallySyncTrustedMachines = try container.decodeIfPresent(Bool.self, forKey: .automaticallySyncTrustedMachines) ?? false
+        self.syncRepositoryDevFiles = try container.decodeIfPresent(Bool.self, forKey: .syncRepositoryDevFiles) ?? false
         self.syncStates = try container.decodeIfPresent([String: SyncFileState].self, forKey: .syncStates) ?? [:]
         self.syncTombstones = try container.decodeIfPresent([String: SyncTombstone].self, forKey: .syncTombstones) ?? [:]
     }
@@ -66,8 +71,20 @@ public struct BackupSettings: Codable, Equatable, Sendable {
 
         return BackupSettings(
             destinationRootPath: destination.path,
-            enabledItemIDs: Set(DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager).map(\.id))
+            enabledItemIDs: Set(
+                DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager)
+                    .filter(\.defaultEnabled)
+                    .map(\.id)
+            )
         )
+    }
+
+    public func isEnabled(_ item: BackupItem) -> Bool {
+        if item.syncsRepositoryDevFiles {
+            return syncRepositoryDevFiles
+        }
+
+        return enabledItemIDs.contains(item.id)
     }
 }
 

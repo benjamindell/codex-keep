@@ -46,7 +46,7 @@ public final class BackupService {
         var manifestFiles: [BackupManifestFile] = []
         var warnings: [String] = []
 
-        for item in items where settings.enabledItemIDs.contains(item.id) {
+        for item in items where settings.isEnabled(item) {
             let sourceURL = URL(fileURLWithPath: item.sourcePath).standardizedFileURL
             let destinationURL = stagingURL.appendingRelativePath(item.destinationPath)
 
@@ -77,11 +77,7 @@ public final class BackupService {
                     withIntermediateDirectories: true
                 )
 
-                let stats = try copyItem(
-                    from: sourceURL,
-                    to: destinationURL,
-                    excluding: Set(item.excludedRelativePaths)
-                )
+                let stats = try copyItem(from: sourceURL, to: destinationURL, item: item)
                 manifestFiles.append(contentsOf: try fileRecords(
                     for: item,
                     sourceURL: sourceURL,
@@ -268,7 +264,7 @@ public final class BackupService {
     private func managedTopLevelFolderNames(for items: [BackupItem], settings: BackupSettings) -> Set<String> {
         Set(
             items
-                .filter { settings.enabledItemIDs.contains($0.id) }
+                .filter { settings.isEnabled($0) }
                 .compactMap { $0.destinationPath.split(separator: "/").first.map(String.init) }
         )
     }
@@ -281,12 +277,16 @@ public final class BackupService {
         Self.snapshotDateFormatter.date(from: folderName)
     }
 
-    private func copyItem(from sourceURL: URL, to destinationURL: URL, excluding excludedPaths: Set<String>) throws -> CopyStats {
+    private func copyItem(from sourceURL: URL, to destinationURL: URL, item: BackupItem) throws -> CopyStats {
         var isDirectory: ObjCBool = false
         fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory)
 
+        if item.syncsRepositoryDevFiles {
+            return try copyRepositoryDevFiles(from: sourceURL, to: destinationURL)
+        }
+
         if isDirectory.boolValue {
-            return try copyDirectory(from: sourceURL, to: destinationURL, excluding: excludedPaths)
+            return try copyDirectory(from: sourceURL, to: destinationURL, excluding: Set(item.excludedRelativePaths))
         }
 
         if fileManager.fileExists(atPath: destinationURL.path) {
@@ -295,6 +295,47 @@ public final class BackupService {
         try fileManager.copyItem(at: sourceURL, to: destinationURL)
         let byteCount = try byteCount(for: destinationURL)
         return CopyStats(fileCount: 1, byteCount: byteCount)
+    }
+
+    private func copyRepositoryDevFiles(from sourceURL: URL, to destinationURL: URL) throws -> CopyStats {
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+        try fileManager.createDirectory(at: destinationURL, withIntermediateDirectories: true)
+
+        let contents = try fileManager.contentsOfDirectory(
+            at: sourceURL,
+            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            options: []
+        )
+
+        var stats = CopyStats()
+        for sourceChild in contents where isRepositoryDevFile(sourceChild.lastPathComponent) {
+            let values = try sourceChild.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true else {
+                continue
+            }
+
+            let destinationChild = destinationURL.appendingPathComponent(sourceChild.lastPathComponent)
+            try fileManager.copyItem(at: sourceChild, to: destinationChild)
+            stats.fileCount += 1
+            stats.byteCount += UInt64(values.fileSize ?? 0)
+        }
+
+        return stats
+    }
+
+    private func isRepositoryDevFile(_ fileName: String) -> Bool {
+        guard fileName == ".env" || fileName.hasPrefix(".env.") else {
+            return false
+        }
+
+        let excludedNames: Set<String> = [
+            ".env.example",
+            ".env.sample",
+            ".env.template"
+        ]
+        return !excludedNames.contains(fileName.lowercased())
     }
 
     private func copyDirectory(from sourceURL: URL, to destinationURL: URL, excluding excludedPaths: Set<String>) throws -> CopyStats {
