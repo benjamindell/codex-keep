@@ -1,7 +1,6 @@
-# Codex Keep 0.1.27
+# Codex Keep 0.1.28
 
-Expands local Git repository dev-file sync.
+Brings Sparkle update windows to the front when checking for updates.
 
-- Adds root `fabfile_local.py` and `local_settings.py` to the existing opt-in repo dev-file sync.
-- Adds root `.vscode` directory sync under the same option.
-- Keeps repo-dev sync limited to trusted Macs that already have the same Git repository checkout.
+- Activates Codex Keep before opening Sparkle's update UI.
+- Re-activates the app when Sparkle is about to show update alerts.

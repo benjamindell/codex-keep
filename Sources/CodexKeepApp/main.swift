@@ -16,6 +16,32 @@ private enum CodexKeepAppError: LocalizedError {
 }
 
 @MainActor
+private func activateCodexKeepForModalUI() {
+    NSApp.activate(ignoringOtherApps: true)
+    DispatchQueue.main.async {
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+private final class SparkleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    nonisolated func standardUserDriverWillShowModalAlert() {
+        Task { @MainActor in
+            activateCodexKeepForModalUI()
+        }
+    }
+
+    nonisolated func standardUserDriverWillHandleShowingUpdate(
+        _ handleShowingUpdate: Bool,
+        forUpdate update: SUAppcastItem,
+        state: SPUUserUpdateState
+    ) {
+        Task { @MainActor in
+            activateCodexKeepForModalUI()
+        }
+    }
+}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settingsStore = SettingsStore()
     private let backupService = BackupService()
@@ -28,10 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         formatter.unitsStyle = .full
         return formatter
     }()
-    private let updaterController = SPUStandardUpdaterController(
+    private let sparkleUserDriverDelegate = SparkleUserDriverDelegate()
+    private lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
         updaterDelegate: nil,
-        userDriverDelegate: nil
+        userDriverDelegate: sparkleUserDriverDelegate
     )
 
     private var timer: Timer?
@@ -423,6 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func checkForUpdates() {
+        activateCodexKeepForModalUI()
         updaterController.checkForUpdates(nil)
     }
 
