@@ -1,9 +1,8 @@
-# Codex Keep 0.1.8
+# Codex Keep 0.1.9
 
-Adds trusted-machine sync for keeping Codex skills, prompts, rules, and selected Codex state aligned across your Macs.
+Clarifies trusted-machine setup when no peer Mac backups have appeared in the selected backup folder yet.
 
-- Choose trusted peer Macs from existing Codex Keep backup folders.
-- Review peer changes file-by-file before applying them.
-- Auto-sync trusted machines for non-conflicting creates and updates.
-- Keep conflicts reviewable by saving the peer copy beside the local file instead of overwriting it.
-- Review peer deletions explicitly, with tombstones and sync safety snapshots for rollback.
+- Shows the exact backup folder Codex Keep checked.
+- Shows the current machine name this Mac is backing up as.
+- Replaces the empty Save dialog with OK and Open Backup Folder actions.
+- Keeps trusted-machine sync from 0.1.8: file-level review, automatic non-conflicting updates, conflict copies, deletion review, tombstones, and sync safety snapshots.

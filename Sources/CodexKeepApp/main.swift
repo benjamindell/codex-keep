@@ -221,9 +221,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Trusted Machines"
-        alert.informativeText = availablePeers.isEmpty
-            ? "No other Codex Keep machine backups were found in the selected backup folder yet."
-            : "Choose which machine backups this Mac should review and sync from."
+        alert.informativeText = trustedMachinesMessage(machineNames: availablePeers)
+
+        if availablePeers.isEmpty {
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Open Backup Folder")
+
+            if alert.runModal() == .alertSecondButtonReturn {
+                NSWorkspace.shared.open(URL(fileURLWithPath: settingsStore.settings.destinationRootPath))
+            }
+
+            return
+        }
+
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
 
@@ -561,6 +571,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         return (stackView, checkboxes)
+    }
+
+    private func trustedMachinesMessage(machineNames: [String]) -> String {
+        if machineNames.isEmpty {
+            return [
+                "No other Codex Keep machine backups were found in the selected backup folder yet.",
+                "Backup folder: \(settingsStore.settings.destinationRootPath)",
+                "This Mac is backing up as: \(Machine.currentName())",
+                "Run Codex Keep on the other Mac using the same backup folder, then come back here."
+            ].joined(separator: "\n\n")
+        }
+
+        return [
+            "Choose which machine backups this Mac should review and sync from.",
+            "Backup folder: \(settingsStore.settings.destinationRootPath)",
+            "This Mac is backing up as: \(Machine.currentName())"
+        ].joined(separator: "\n\n")
     }
 
     private func presentPeerSyncPlans(_ plans: [PeerSyncPlan]) -> Set<String>? {
