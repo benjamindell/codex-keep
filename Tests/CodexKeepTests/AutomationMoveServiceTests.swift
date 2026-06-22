@@ -75,6 +75,34 @@ import Testing
     #expect(try snapshotContains("old", in: safetySnapshotURL, fileManager: fileManager))
 }
 
+@Test func automationMoveListsPendingMovesWithoutInstallingThem() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let destinationRoot = root.appendingPathComponent("Codex Keep", isDirectory: true)
+    let moveDaily = destinationRoot.appending(relativePath: "\(Machine.currentName())/Automation Moves/move-1/Automations/daily-report")
+    let moveURL = destinationRoot.appending(relativePath: "\(Machine.currentName())/Automation Moves/move-1")
+    let localDaily = home.appending(relativePath: ".codex/automations/daily-report")
+
+    try fileManager.createDirectory(at: moveDaily, withIntermediateDirectories: true)
+    try "new".write(to: moveDaily.appendingPathComponent("automation.toml"), atomically: true, encoding: .utf8)
+    try writeMoveManifest(to: moveURL, targetMachineName: Machine.currentName())
+
+    let service = AutomationMoveService(fileManager: fileManager)
+    let moves = try service.pendingMoves(
+        settings: BackupSettings(destinationRootPath: destinationRoot.path, enabledItemIDs: [])
+    )
+
+    let move = try #require(moves.first)
+    #expect(moves.count == 1)
+    #expect(move.automationIDs == ["daily-report"])
+    #expect(move.sourceMachineName == "Source-Mac")
+    #expect(fileManager.fileExists(atPath: moveURL.path))
+    #expect(!fileManager.fileExists(atPath: localDaily.path))
+}
+
 private func writeMoveManifest(to moveURL: URL, targetMachineName: String) throws {
     let manifest = AutomationMoveManifest(
         createdAt: Date(timeIntervalSince1970: 0),

@@ -291,11 +291,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func manageAutomations() {
         do {
             let automations = try automationMoveService.localAutomations()
+            let pendingMoves = try automationMoveService.pendingMoves(settings: settingsStore.settings)
             let targetMachineNames = settingsStore.settings.trustedMachineNames.sorted {
                 $0.localizedStandardCompare($1) == .orderedAscending
             }
             let view = ManageAutomationsView(
                 automations: automations,
+                pendingMoves: pendingMoves,
                 targetMachineNames: targetMachineNames,
                 currentMachineName: Machine.currentName(),
                 backupFolderPath: settingsStore.settings.destinationRootPath,
@@ -307,6 +309,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 onConfigureTrustedMachines: { [weak self] in
                     Task { @MainActor in
                         self?.configureTrustedMachines()
+                    }
+                },
+                onInstallIncomingMoves: { [weak self] in
+                    Task { @MainActor in
+                        self?.installIncomingAutomationMoves()
                     }
                 },
                 onOpenBackupFolder: { [weak self] in
@@ -322,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             window.title = "Manage Automations"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
-            window.setContentSize(NSSize(width: 660, height: automations.isEmpty ? 320 : min(620, 300 + automations.count * 54)))
+            window.setContentSize(NSSize(width: 660, height: min(680, 360 + automations.count * 54 + pendingMoves.count * 62)))
             window.center()
 
             let controller = NSWindowController(window: window)
@@ -349,6 +356,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             lastError = error
             presentError(error, messageText: "Codex Keep could not move automations.")
+        }
+
+        rebuildMenu()
+    }
+
+    private func installIncomingAutomationMoves() {
+        do {
+            let result = try automationMoveService.consumePendingMoves(settings: settingsStore.settings)
+            lastResult = try BackupService().runBackup(settings: settingsStore.settings)
+            manageAutomationsWindowController?.close()
+            manageAutomationsWindowController = nil
+            presentAutomationMoveInstallSuccess(result)
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not install automation moves.")
         }
 
         rebuildMenu()
@@ -795,7 +817,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func presentAutomationMoveSuccess(_ result: AutomationMoveResult, targetMachineName: String) {
         let alert = NSAlert()
         alert.messageText = "Automations moved"
-        alert.informativeText = "\(result.movedCount) automations were moved to \(targetMachineName). They will be installed there the next time Codex Keep runs on that Mac. Safety snapshot: \(result.safetySnapshotURL.path)"
+        alert.informativeText = "\(result.movedCount) automations were prepared for \(targetMachineName). Open Manage Automations on that Mac to install the incoming move. Safety snapshot: \(result.safetySnapshotURL.path)"
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Open Safety Snapshot")
 
@@ -804,12 +826,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func presentAutomationMoveInstallSuccess(_ result: AutomationMoveConsumeResult) {
+        let alert = NSAlert()
+        alert.messageText = "Automation moves installed"
+        var lines = [
+            "\(result.installedCount) automations were installed from \(result.consumedMoveCount) incoming move packages."
+        ]
+
+        if let safetySnapshotURL = result.safetySnapshotURL {
+            lines.append("Safety snapshot: \(safetySnapshotURL.path)")
+        }
+
+        alert.informativeText = lines.joined(separator: "\n\n")
+        alert.addButton(withTitle: "OK")
+
+        if let safetySnapshotURL = result.safetySnapshotURL {
+            alert.addButton(withTitle: "Open Safety Snapshot")
+            if alert.runModal() == .alertSecondButtonReturn {
+                NSWorkspace.shared.open(safetySnapshotURL)
+            }
+        } else {
+            alert.runModal()
+        }
+    }
+
     nonisolated private static func runBackupAndPeerSync(settings: BackupSettings) throws -> BackupAndPeerSyncResult {
         let backupService = BackupService()
         let peerSyncService = PeerSyncService()
-        let automationMoveService = AutomationMoveService()
         var workingSettings = settings
-        _ = try automationMoveService.consumePendingMoves(settings: workingSettings)
         var backupResult = try backupService.runBackup(settings: workingSettings)
 
         let settingsAfterLocalState = peerSyncService.settingsByRecordingLocalState(
@@ -1008,11 +1052,13 @@ private struct TrustedMachinesView: View {
 
 private struct ManageAutomationsView: View {
     var automations: [AutomationSummary]
+    var pendingMoves: [PendingAutomationMoveSummary]
     var targetMachineNames: [String]
     var currentMachineName: String
     var backupFolderPath: String
     var onMove: (Set<String>, String) -> Void
     var onConfigureTrustedMachines: () -> Void
+    var onInstallIncomingMoves: () -> Void
     var onOpenBackupFolder: () -> Void
 
     @State private var selectedAutomationIDs: Set<String> = []
@@ -1020,19 +1066,23 @@ private struct ManageAutomationsView: View {
 
     init(
         automations: [AutomationSummary],
+        pendingMoves: [PendingAutomationMoveSummary],
         targetMachineNames: [String],
         currentMachineName: String,
         backupFolderPath: String,
         onMove: @escaping (Set<String>, String) -> Void,
         onConfigureTrustedMachines: @escaping () -> Void,
+        onInstallIncomingMoves: @escaping () -> Void,
         onOpenBackupFolder: @escaping () -> Void
     ) {
         self.automations = automations
+        self.pendingMoves = pendingMoves
         self.targetMachineNames = targetMachineNames
         self.currentMachineName = currentMachineName
         self.backupFolderPath = backupFolderPath
         self.onMove = onMove
         self.onConfigureTrustedMachines = onConfigureTrustedMachines
+        self.onInstallIncomingMoves = onInstallIncomingMoves
         self.onOpenBackupFolder = onOpenBackupFolder
         self._selectedTargetMachineName = State(initialValue: targetMachineNames.first ?? "")
     }
@@ -1040,6 +1090,10 @@ private struct ManageAutomationsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             header
+
+            if !pendingMoves.isEmpty {
+                incomingMovesSection
+            }
 
             if automations.isEmpty {
                 emptyAutomationsState
@@ -1108,6 +1162,58 @@ private struct ManageAutomationsView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var incomingMovesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Incoming Moves")
+                        .font(.headline)
+                    Text("\(pendingMoves.count) pending move packages are waiting for this Mac.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button("Install Incoming", action: onInstallIncomingMoves)
+                    .buttonStyle(.borderedProminent)
+            }
+
+            VStack(spacing: 0) {
+                ForEach(pendingMoves) { move in
+                    incomingMoveRow(move)
+
+                    if move.id != pendingMoves.last?.id {
+                        Divider()
+                            .padding(.leading, 12)
+                    }
+                }
+            }
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            )
+        }
+    }
+
+    private func incomingMoveRow(_ move: PendingAutomationMoveSummary) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(move.sourceMachineName)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Text(move.automationIDs.joined(separator: ", "))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var automationList: some View {

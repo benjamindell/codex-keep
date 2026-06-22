@@ -58,6 +58,28 @@ public struct AutomationMoveConsumeResult: Equatable, Sendable {
     )
 }
 
+public struct PendingAutomationMoveSummary: Equatable, Identifiable, Sendable {
+    public var id: String
+    public var sourceMachineName: String
+    public var createdAt: Date
+    public var automationIDs: [String]
+    public var path: String
+
+    public init(
+        id: String,
+        sourceMachineName: String,
+        createdAt: Date,
+        automationIDs: [String],
+        path: String
+    ) {
+        self.id = id
+        self.sourceMachineName = sourceMachineName
+        self.createdAt = createdAt
+        self.automationIDs = automationIDs
+        self.path = path
+    }
+}
+
 public struct AutomationMoveManifest: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var createdAt: Date
@@ -289,6 +311,55 @@ public final class AutomationMoveService {
             throw error
         } catch {
             throw AutomationMoveServiceError.unableToInstall(error.localizedDescription)
+        }
+    }
+
+    public func pendingMoves(settings: BackupSettings) throws -> [PendingAutomationMoveSummary] {
+        let pendingRoot = pendingMovesRoot(
+            settings: settings,
+            machineName: Machine.currentName()
+        )
+
+        guard fileManager.fileExists(atPath: pendingRoot.path) else {
+            return []
+        }
+
+        let moveURLs = try fileManager.contentsOfDirectory(
+            at: pendingRoot,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+
+        return moveURLs.compactMap { url in
+            var isDirectory: ObjCBool = false
+            guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  isDirectory.boolValue,
+                  !url.lastPathComponent.hasPrefix(".")
+            else {
+                return nil
+            }
+
+            try? fileManager.startDownloadingUbiquitousItem(at: url)
+            guard let manifest = try? readMoveManifest(at: url) else {
+                return nil
+            }
+
+            return PendingAutomationMoveSummary(
+                id: url.lastPathComponent,
+                sourceMachineName: manifest.sourceMachineName,
+                createdAt: manifest.createdAt,
+                automationIDs: manifest.automations.map(\.id).sorted {
+                    $0.localizedStandardCompare($1) == .orderedAscending
+                },
+                path: url.standardizedFileURL.path
+            )
+        }
+        .sorted { first, second in
+            if first.createdAt != second.createdAt {
+                return first.createdAt < second.createdAt
+            }
+
+            return first.id.localizedStandardCompare(second.id) == .orderedAscending
         }
     }
 
