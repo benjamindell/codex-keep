@@ -1,7 +1,7 @@
-# Codex Keep 0.1.32
+# Codex Keep 0.1.33
 
-Prevents Secondary Machine Mode repository pulls from getting stuck silently.
+Makes automation moves more reliable when iCloud exposes package metadata before files.
 
-- Adds per-repository progress lines to the repository pull log.
-- Times out hung Git commands and marks that repository as skipped.
-- Forces Git credential prompts to stay non-interactive during background pulls.
+- Adds a payload archive to each automation move package.
+- Installs moved automations from the archive if the visible folder tree is not hydrated yet.
+- Logs whether pending automation moves were installed during backup.

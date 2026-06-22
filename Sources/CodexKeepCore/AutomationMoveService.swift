@@ -118,9 +118,14 @@ public final class AutomationMoveService {
     private let fileManager: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private let moveHydrationTimeout: TimeInterval
 
-    public init(fileManager: FileManager = .default) {
+    public init(
+        fileManager: FileManager = .default,
+        moveHydrationTimeout: TimeInterval = 30
+    ) {
         self.fileManager = fileManager
+        self.moveHydrationTimeout = moveHydrationTimeout
         self.encoder = JSONEncoder()
         self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         self.encoder.dateEncodingStrategy = .iso8601
@@ -259,31 +264,33 @@ public final class AutomationMoveService {
         }
 
         do {
-            let manifests = moveURLs.compactMap { url -> (URL, AutomationMoveManifest)? in
-                try? fileManager.startDownloadingUbiquitousItem(at: url)
-                try? fileManager.startDownloadingUbiquitousItem(at: url.appendingPathComponent("manifest.json"))
-                guard isReadyForImmediateRead(url.appendingPathComponent("manifest.json")) else {
+            var cleanupURLs: [URL] = []
+            let deadline = Date().addingTimeInterval(moveHydrationTimeout)
+            let moves = moveURLs.compactMap { url -> PreparedAutomationMove? in
+                guard let move = try? prepareMoveForConsumption(moveURL: url, waitUntil: deadline) else {
                     return nil
                 }
 
-                guard let manifest = try? readMoveManifest(at: url) else {
-                    return nil
+                if let cleanupURL = move.cleanupURL {
+                    cleanupURLs.append(cleanupURL)
                 }
 
-                guard movePackageIsReady(moveURL: url, manifest: manifest) else {
-                    return nil
-                }
-
-                return (url, manifest)
+                return move
             }
-            guard !manifests.isEmpty else {
+            defer {
+                for cleanupURL in cleanupURLs {
+                    try? fileManager.removeItem(at: cleanupURL)
+                }
+            }
+
+            guard !moves.isEmpty else {
                 return .empty
             }
 
-            let targetURLs = manifests.flatMap { moveURL, manifest in
-                manifest.automations.map { item in
+            let targetURLs = moves.flatMap { move in
+                move.manifest.automations.map { item in
                     (
-                        sourceURL: moveURL
+                        sourceURL: move.sourceRootURL
                             .appendingPathComponent("Automations", isDirectory: true)
                             .appendingPathComponent(item.id, isDirectory: true),
                         targetURL: automationsURL(homeDirectory: homeDirectory)
@@ -307,13 +314,13 @@ public final class AutomationMoveService {
                 installedCount += 1
             }
 
-            for (moveURL, _) in manifests {
-                try fileManager.removeItem(at: moveURL)
+            for move in moves {
+                try fileManager.removeItem(at: move.moveURL)
             }
 
             return AutomationMoveConsumeResult(
                 installedCount: installedCount,
-                consumedMoveCount: manifests.count,
+                consumedMoveCount: moves.count,
                 safetySnapshotURL: safetySnapshotURL
             )
         } catch let error as AutomationMoveServiceError {
@@ -419,6 +426,88 @@ public final class AutomationMoveService {
         return true
     }
 
+    private func prepareMoveForConsumption(moveURL: URL, waitUntil deadline: Date) throws -> PreparedAutomationMove? {
+        let manifestURL = moveURL.appendingPathComponent("manifest.json")
+        try? fileManager.startDownloadingUbiquitousItem(at: moveURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
+        guard waitUntilReadyForImmediateRead(manifestURL, deadline: deadline) else {
+            return nil
+        }
+
+        let manifest = try readMoveManifest(at: moveURL)
+        let shouldWait = isLikelyICloudURL(moveURL)
+        repeat {
+            if movePackageIsReady(moveURL: moveURL, manifest: manifest) {
+                return PreparedAutomationMove(
+                    moveURL: moveURL,
+                    sourceRootURL: moveURL,
+                    cleanupURL: nil,
+                    manifest: manifest
+                )
+            }
+
+            if let extractedURL = try preparedMovePayloadExtractionURL(moveURL: moveURL),
+               movePackageIsReady(moveURL: extractedURL, manifest: manifest) {
+                return PreparedAutomationMove(
+                    moveURL: moveURL,
+                    sourceRootURL: extractedURL,
+                    cleanupURL: extractedURL,
+                    manifest: manifest
+                )
+            }
+
+            if !shouldWait {
+                return nil
+            }
+
+            guard Date() < deadline else {
+                return nil
+            }
+
+            Thread.sleep(forTimeInterval: 0.5)
+        } while true
+    }
+
+    private func preparedMovePayloadExtractionURL(moveURL: URL) throws -> URL? {
+        let payloadURL = moveURL.appendingPathComponent(PayloadArchive.fileName)
+        try? fileManager.startDownloadingUbiquitousItem(at: moveURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
+
+        guard fileManager.fileExists(atPath: payloadURL.path), isReadyForImmediateRead(payloadURL) else {
+            return nil
+        }
+
+        let extractionURL = fileManager.temporaryDirectory
+            .appendingPathComponent("codex-keep-automation-move-\(UUID().uuidString)", isDirectory: true)
+
+        do {
+            try PayloadArchive.extract(archiveURL: payloadURL, to: extractionURL)
+            return extractionURL
+        } catch {
+            try? fileManager.removeItem(at: extractionURL)
+            throw error
+        }
+    }
+
+    private func waitUntilReadyForImmediateRead(_ url: URL, deadline: Date) -> Bool {
+        repeat {
+            try? fileManager.startDownloadingUbiquitousItem(at: url)
+            if isReadyForImmediateRead(url) {
+                return true
+            }
+
+            guard Date() < deadline else {
+                return false
+            }
+
+            Thread.sleep(forTimeInterval: 0.2)
+        } while true
+    }
+
+    private func isLikelyICloudURL(_ url: URL) -> Bool {
+        url.standardizedFileURL.path.contains("/Library/Mobile Documents/")
+    }
+
     private func isReadyForImmediateRead(_ url: URL) -> Bool {
         guard fileManager.fileExists(atPath: url.path) else {
             return false
@@ -475,12 +564,29 @@ public final class AutomationMoveService {
         )
         try encoder.encode(manifest)
             .write(to: stagingURL.appendingPathComponent("manifest.json"), options: .atomic)
+        try publishMovePayloadArchive(from: stagingURL, moveRoot: root)
 
         if fileManager.fileExists(atPath: finalURL.path) {
             try fileManager.removeItem(at: finalURL)
         }
         try fileManager.moveItem(at: stagingURL, to: finalURL)
         return finalURL
+    }
+
+    private func publishMovePayloadArchive(from stagingURL: URL, moveRoot: URL) throws {
+        let temporaryArchiveURL = moveRoot.appendingPathComponent(".automation-move-\(UUID().uuidString).zip")
+        defer {
+            if fileManager.fileExists(atPath: temporaryArchiveURL.path) {
+                try? fileManager.removeItem(at: temporaryArchiveURL)
+            }
+        }
+
+        try fileManager.createDirectory(at: moveRoot, withIntermediateDirectories: true)
+        try PayloadArchive.create(contentsOf: stagingURL, archiveURL: temporaryArchiveURL)
+        try fileManager.copyItem(
+            at: temporaryArchiveURL,
+            to: stagingURL.appendingPathComponent(PayloadArchive.fileName)
+        )
     }
 
     private func createSafetySnapshot(
@@ -654,6 +760,13 @@ private extension AutomationMoveService {
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
         return formatter
     }()
+}
+
+private struct PreparedAutomationMove {
+    var moveURL: URL
+    var sourceRootURL: URL
+    var cleanupURL: URL?
+    var manifest: AutomationMoveManifest
 }
 
 private struct AutomationMoveCopyStats: Equatable {

@@ -1122,7 +1122,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let automationMoveService = AutomationMoveService()
         var workingSettings = settings
         logBackupPhase("Checking pending automation moves")
-        _ = try automationMoveService.consumePendingMoves(settings: workingSettings)
+        let automationMoveResult = try automationMoveService.consumePendingMoves(settings: workingSettings)
+        if automationMoveResult.installedCount > 0 {
+            logBackupPhase("Installed \(automationMoveResult.installedCount) automation moves from \(automationMoveResult.consumedMoveCount) packages")
+        } else {
+            logBackupPhase("No pending automation moves installed")
+        }
         logBackupPhase("Running local backup")
         var backupResult = try backupService.runBackup(settings: workingSettings)
 
