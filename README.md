@@ -39,6 +39,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 
 - Non-conflicting peer creates and updates are selected by default.
 - Automatic trusted-machine sync applies only non-conflicting file creates and updates.
+- Automations are backed up but excluded from trusted-machine sync so scheduled jobs do not run on multiple Macs.
 - Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.
 - Peer deletions require review and create tombstones so the deletion can propagate deliberately.
 - Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted.

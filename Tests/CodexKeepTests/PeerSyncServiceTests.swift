@@ -17,6 +17,7 @@ import Testing
     #expect(items["Codex/skills/deleted/SKILL.md"]?.status == .peerDeletedReviewRequired)
     #expect(items["Codex/skills/shared/.DS_Store"] == nil)
     #expect(items["Codex/skills/shared/memory.md.tmp"] == nil)
+    #expect(items["Codex/automations/daily-report/automation.toml"] == nil)
 }
 
 @Test func peerSyncAppliesSafeChangesCopiesConflictsAndSnapshotsDeletes() throws {
@@ -141,10 +142,11 @@ private final class PeerSyncFixture {
         try writePeerSkill("local-only", content: "base")
         try writePeerFile("shared/.DS_Store", content: "finder metadata")
         try writePeerFile("shared/memory.md.tmp", content: "temporary write")
+        try writePeerAutomation("daily-report", content: "name = \"Daily\"")
 
         var initialSettings = BackupSettings(
             destinationRootPath: destination.path,
-            enabledItemIDs: ["codex-skills"],
+            enabledItemIDs: ["codex-automations", "codex-skills"],
             trustedMachineNames: ["Peer-Mac"],
             syncStates: [
                 "Codex/skills/shared/SKILL.md": SyncFileState(
@@ -212,6 +214,12 @@ private final class PeerSyncFixture {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    private func writePeerAutomation(_ name: String, content: String) throws {
+        let url = peerLatest.appending(relativePath: "Codex/automations/\(name)/automation.toml")
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func writePeerManifest() throws {
         var files = try ["shared", "new", "conflict", "local-only"].map { name in
             let url = peerLatest.appending(relativePath: "Codex/skills/\(name)/SKILL.md")
@@ -246,6 +254,17 @@ private final class PeerSyncFixture {
             sourcePath: "/peer/.codex/skills/shared/memory.md.tmp",
             byteCount: UInt64((try Data(contentsOf: tempURL)).count),
             sha256: try fileSHA256(tempURL),
+            modifiedAt: Date(timeIntervalSince1970: 0)
+        ))
+        let automationURL = peerLatest.appending(relativePath: "Codex/automations/daily-report/automation.toml")
+        files.append(BackupManifestFile(
+            itemID: "codex-automations",
+            itemDisplayName: "Codex automations",
+            relativePath: "daily-report/automation.toml",
+            backupRelativePath: "Codex/automations/daily-report/automation.toml",
+            sourcePath: "/peer/.codex/automations/daily-report/automation.toml",
+            byteCount: UInt64((try Data(contentsOf: automationURL)).count),
+            sha256: try fileSHA256(automationURL),
             modifiedAt: Date(timeIntervalSince1970: 0)
         ))
 
