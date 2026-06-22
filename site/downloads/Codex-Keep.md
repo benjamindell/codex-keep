@@ -1,10 +1,10 @@
-# Codex Keep 0.1.21
+# Codex Keep 0.1.22
 
-Stops endless saving indicators and exposes diagnostics.
+Skips peer-sync files that are still only iCloud placeholders.
 
-- Adds a two-minute watchdog so the menu bar does not stay in Saving forever.
-- Reports the last logged backup phase when a run times out.
-- Adds `Open Diagnostic Log` to the menu.
+- Avoids blocking automatic peer sync when a peer backup file exists but is not locally downloaded yet.
+- Requests the iCloud download and skips that file for the current run.
+- Keeps the two-minute watchdog and diagnostic log from 0.1.21.
 - Keeps non-blocking iCloud automation move handling from 0.1.20.
 - Keeps automatic install for explicitly moved automations from 0.1.19.
 - Keeps automations excluded from trusted-machine sync so scheduled jobs do not duplicate across Macs.

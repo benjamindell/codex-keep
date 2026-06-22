@@ -3,15 +3,15 @@
     <channel>
         <title>Codex Keep</title>
         <item>
-            <title>0.1.21</title>
-            <pubDate>Mon, 22 Jun 2026 14:51:38 +0100</pubDate>
+            <title>0.1.22</title>
+            <pubDate>Mon, 22 Jun 2026 15:01:20 +0100</pubDate>
             <link>https://codexkeep.app</link>
-            <sparkle:version>22</sparkle:version>
-            <sparkle:shortVersionString>0.1.21</sparkle:shortVersionString>
+            <sparkle:version>23</sparkle:version>
+            <sparkle:shortVersionString>0.1.22</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <sparkle:releaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:releaseNotesLink>
-            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1437521" type="application/octet-stream" sparkle:edSignature="AtfDSp097zEbwpEtS98tixot0rUC8Cc3ePopoqM5PC0l32tPuS8ffXT2QEv6h3V5Ey50qF7BXQZobIsROjq6Dg=="/>
+            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1438019" type="application/octet-stream" sparkle:edSignature="J/r0vY+XI4HC5Y8OLUftfe/Z6JVqxN3oWFRziZnRfCnFXA/Ja+ooMThBLYuaUQ8ZCUdG0p4AqJfrlgY7Rm3eCQ=="/>
         </item>
     </channel>
 </rss>

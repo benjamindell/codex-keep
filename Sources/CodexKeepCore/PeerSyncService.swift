@@ -587,6 +587,25 @@ public final class PeerSyncService {
         var isDirectory: ObjCBool = false
         return fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory)
             && !isDirectory.boolValue
+            && isReadyForImmediateRead(sourceURL)
+    }
+
+    private func isReadyForImmediateRead(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return false
+        }
+
+        guard let values = try? url.resourceValues(forKeys: [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey
+        ]),
+              values.isUbiquitousItem == true
+        else {
+            return true
+        }
+
+        return values.ubiquitousItemDownloadingStatus == .current
+            || values.ubiquitousItemDownloadingStatus == .downloaded
     }
 
     private func replaceFile(from sourceURL: URL, to targetURL: URL) throws {
