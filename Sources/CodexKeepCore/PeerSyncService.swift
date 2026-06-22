@@ -328,7 +328,7 @@ public final class PeerSyncService {
         var skippedItemCount = 0
         var skippedBackupRelativePaths: [String] = []
         var extractedPayloads: [String: URL] = [:]
-        let peerDownloadDeadline = Date().addingTimeInterval(30)
+        let peerDownloadDeadline = Date().addingTimeInterval(120)
         defer {
             for url in extractedPayloads.values {
                 try? fileManager.removeItem(at: url)
@@ -612,24 +612,12 @@ public final class PeerSyncService {
             return sourceURL
         }
 
-        let payloadURL = plan.sourceURL.appendingPathComponent(PayloadArchive.fileName)
-        guard preparePeerSourceFile(
-            at: payloadURL,
-            waitUntil: deadline,
-            waitForMissingFile: isLikelyICloudURL(payloadURL)
+        guard let extractionURL = try preparedPayloadExtractionURL(
+            for: plan,
+            extractedPayloads: &extractedPayloads,
+            waitUntil: deadline
         ) else {
             return nil
-        }
-
-        let payloadKey = plan.sourceURL.standardizedFileURL.path
-        let extractionURL: URL
-        if let existingURL = extractedPayloads[payloadKey] {
-            extractionURL = existingURL
-        } else {
-            extractionURL = fileManager.temporaryDirectory
-                .appendingPathComponent("codex-keep-peer-\(UUID().uuidString)", isDirectory: true)
-            try PayloadArchive.extract(archiveURL: payloadURL, to: extractionURL)
-            extractedPayloads[payloadKey] = extractionURL
         }
 
         let extractedSourceURL = extractionURL.appendingRelativePath(backupRelativePath)
@@ -641,6 +629,48 @@ public final class PeerSyncService {
         }
 
         return extractedSourceURL
+    }
+
+    private func preparedPayloadExtractionURL(
+        for plan: PeerSyncPlan,
+        extractedPayloads: inout [String: URL],
+        waitUntil deadline: Date
+    ) throws -> URL? {
+        let payloadKey = plan.sourceURL.standardizedFileURL.path
+        if let existingURL = extractedPayloads[payloadKey] {
+            return existingURL
+        }
+
+        let payloadURL = plan.sourceURL.appendingPathComponent(PayloadArchive.fileName)
+        let shouldWait = isLikelyICloudURL(payloadURL)
+        repeat {
+            try? fileManager.startDownloadingUbiquitousItem(at: plan.sourceURL)
+            try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
+
+            if fileManager.fileExists(atPath: payloadURL.path) {
+                let extractionURL = fileManager.temporaryDirectory
+                    .appendingPathComponent("codex-keep-peer-\(UUID().uuidString)", isDirectory: true)
+
+                do {
+                    try PayloadArchive.extract(archiveURL: payloadURL, to: extractionURL)
+                    extractedPayloads[payloadKey] = extractionURL
+                    return extractionURL
+                } catch {
+                    try? fileManager.removeItem(at: extractionURL)
+                    if !shouldWait || Date() >= deadline {
+                        throw error
+                    }
+                }
+            } else if !shouldWait {
+                return nil
+            }
+
+            guard Date() < deadline else {
+                return nil
+            }
+
+            Thread.sleep(forTimeInterval: 1)
+        } while true
     }
 
     private func preparePeerSourceFile(

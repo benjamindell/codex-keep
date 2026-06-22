@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var animationFrame = 0
     private let animationFrames = ["|", "/", "-", "\\"]
     private let minimumSyncIndicatorDuration: TimeInterval = 1.25
-    private let backupTimeoutDuration: TimeInterval = 120
+    private let backupTimeoutDuration: TimeInterval = 180
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -493,7 +493,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         Task.detached {
             Self.resetBackupRunLog()
-            Self.logBackupPhase("Backup run started")
+            Self.logBackupPhase("Backup run started with Codex Keep \(Self.appVersionDescription())")
             let result = Result {
                 try Self.runBackupAndPeerSync(settings: settings)
             }
@@ -1033,6 +1033,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .appendingPathComponent("Logs", isDirectory: true)
             .appendingPathComponent("Codex Keep", isDirectory: true)
             .appendingPathComponent("last-run.log")
+    }
+
+    nonisolated private static func appVersionDescription() -> String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
+        let build = info?["CFBundleVersion"] as? String ?? "unknown"
+        return "\(version) (\(build))"
     }
 
     nonisolated private static func lastBackupLogPhase() -> String? {
