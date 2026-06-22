@@ -714,7 +714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func presentPeerSyncSuccess(_ result: PeerSyncApplyResult) {
         let alert = NSAlert()
         alert.messageText = "Peer changes synced"
-        alert.informativeText = "\(result.appliedItemCount) files updated, \(result.conflictCopyCount) conflict copies saved, \(result.deletedItemCount) files deleted. Safety snapshot: \(result.safetySnapshotURL.path)"
+        alert.informativeText = "\(result.appliedItemCount) files updated, \(result.conflictCopyCount) conflict copies saved, \(result.deletedItemCount) files deleted, \(result.skippedItemCount) stale files skipped. Safety snapshot: \(result.safetySnapshotURL.path)"
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Open Safety Snapshot")
 

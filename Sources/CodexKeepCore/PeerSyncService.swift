@@ -77,6 +77,7 @@ public struct PeerSyncApplyResult: Equatable, Sendable {
     public var appliedItemCount: Int
     public var conflictCopyCount: Int
     public var deletedItemCount: Int
+    public var skippedItemCount: Int
     public var safetySnapshotURL: URL
     public var updatedSettings: BackupSettings
 }
@@ -323,6 +324,7 @@ public final class PeerSyncService {
         var appliedItemCount = 0
         var conflictCopyCount = 0
         var deletedItemCount = 0
+        var skippedItemCount = 0
 
         do {
             for (plan, items) in selectedItemsByPlan {
@@ -330,6 +332,11 @@ public final class PeerSyncService {
                     switch item.status {
                     case .incomingNew, .incomingChanged:
                         let sourceURL = plan.sourceURL.appendingRelativePath(item.backupRelativePath)
+                        guard preparePeerSourceFile(at: sourceURL) else {
+                            skippedItemCount += 1
+                            continue
+                        }
+
                         try replaceFile(from: sourceURL, to: URL(fileURLWithPath: item.targetPath))
                         updatedSettings.syncStates[item.backupRelativePath] = SyncFileState(
                             sha256: item.peerSHA256,
@@ -340,6 +347,11 @@ public final class PeerSyncService {
                         appliedItemCount += 1
                     case .conflict where item.peerSHA256 != nil:
                         let sourceURL = plan.sourceURL.appendingRelativePath(item.backupRelativePath)
+                        guard preparePeerSourceFile(at: sourceURL) else {
+                            skippedItemCount += 1
+                            continue
+                        }
+
                         try copyConflictFile(
                             from: sourceURL,
                             beside: URL(fileURLWithPath: item.targetPath),
@@ -378,6 +390,7 @@ public final class PeerSyncService {
             appliedItemCount: appliedItemCount,
             conflictCopyCount: conflictCopyCount,
             deletedItemCount: deletedItemCount,
+            skippedItemCount: skippedItemCount,
             safetySnapshotURL: safetySnapshotURL,
             updatedSettings: updatedSettings
         )
@@ -521,17 +534,30 @@ public final class PeerSyncService {
                 at: destinationURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true
             )
-            try fileManager.copyItem(at: sourceURL, to: destinationURL)
-            snapshotItems.append(BackupManifestItem(
-                id: item.id,
-                displayName: item.displayName,
-                sourcePath: sourceURL.path,
-                destinationPath: destinationURL.path,
-                status: .copied,
-                fileCount: 1,
-                byteCount: item.byteCount,
-                message: nil
-            ))
+            do {
+                try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                snapshotItems.append(BackupManifestItem(
+                    id: item.id,
+                    displayName: item.displayName,
+                    sourcePath: sourceURL.path,
+                    destinationPath: destinationURL.path,
+                    status: .copied,
+                    fileCount: 1,
+                    byteCount: item.byteCount,
+                    message: nil
+                ))
+            } catch where isMissingFileError(error) {
+                snapshotItems.append(BackupManifestItem(
+                    id: item.id,
+                    displayName: item.displayName,
+                    sourcePath: sourceURL.path,
+                    destinationPath: destinationURL.path,
+                    status: .missing,
+                    fileCount: 0,
+                    byteCount: 0,
+                    message: "The local item disappeared before sync."
+                ))
+            }
         }
 
         let manifest = BackupManifest(
@@ -546,6 +572,14 @@ public final class PeerSyncService {
             .write(to: safetySnapshotURL.appendingPathComponent("manifest.json"), options: .atomic)
 
         return safetySnapshotURL
+    }
+
+    private func preparePeerSourceFile(at sourceURL: URL) -> Bool {
+        try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
+
+        var isDirectory: ObjCBool = false
+        return fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory)
+            && !isDirectory.boolValue
     }
 
     private func replaceFile(from sourceURL: URL, to targetURL: URL) throws {
@@ -565,6 +599,12 @@ public final class PeerSyncService {
             }
             throw error
         }
+    }
+
+    private func isMissingFileError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        return nsError.domain == NSCocoaErrorDomain
+            && nsError.code == NSFileReadNoSuchFileError
     }
 
     private func copyConflictFile(

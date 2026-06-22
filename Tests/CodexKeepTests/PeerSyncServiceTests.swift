@@ -51,6 +51,28 @@ import Testing
     #expect(result.updatedSettings.syncTombstones["Codex/skills/deleted/SKILL.md"] != nil)
 }
 
+@Test func peerSyncSkipsManifestFilesMissingAtApplyTime() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    let plans = try fixture.makePlans()
+    let selectedIDs = Set(plans.flatMap(\.items).compactMap { item in
+        item.status == .incomingNew ? item.id : nil
+    })
+    try fixture.fileManager.removeItem(at: fixture.peerLatest.appending(relativePath: "Codex/skills/new/SKILL.md"))
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: plans,
+        selectedItemIDs: selectedIDs,
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.appliedItemCount == 0)
+    #expect(result.skippedItemCount == 1)
+    #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md").path))
+}
+
 @Test func peerDiscoveryShowsVisibleMachineFoldersBeforeManifestHydrates() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
