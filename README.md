@@ -70,6 +70,20 @@ Codex Keep uses Sparkle for update checks.
 
 Release archives are signed with Sparkle's EdDSA key. The public key is embedded in `Packaging/Info.plist`; the private key is stored in the local macOS Keychain.
 
+After updating `site/appcast.xml` and `site/downloads/Codex-Keep.zip`, deploy the static site from the linked Vercel project:
+
+```sh
+cd site
+npx vercel@latest --prod --yes
+```
+
+Verify the live Sparkle feed and archive before testing from the menu bar:
+
+```sh
+curl -fsSL https://codexkeep.app/appcast.xml
+curl -fsSI https://codexkeep.app/downloads/Codex-Keep.zip
+```
+
 ## Backup layout
 
 ```text
