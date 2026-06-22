@@ -512,7 +512,12 @@ public final class PeerSyncService {
         try fileManager.createDirectory(at: safetySnapshotURL, withIntermediateDirectories: true)
 
         var snapshotItems: [BackupManifestItem] = []
+        var snapshotTargetPaths: Set<String> = []
         for item in items {
+            guard snapshotTargetPaths.insert(item.targetPath).inserted else {
+                continue
+            }
+
             let sourceURL = URL(fileURLWithPath: item.targetPath).standardizedFileURL
             let destinationURL = safetySnapshotURL.appendingRelativePath(safetyRelativePath(for: sourceURL))
 
@@ -535,7 +540,7 @@ public final class PeerSyncService {
                 withIntermediateDirectories: true
             )
             do {
-                try fileManager.copyItem(at: sourceURL, to: destinationURL)
+                try copyReplacingDestination(from: sourceURL, to: destinationURL)
                 snapshotItems.append(BackupManifestItem(
                     id: item.id,
                     displayName: item.displayName,
@@ -599,6 +604,14 @@ public final class PeerSyncService {
             }
             throw error
         }
+    }
+
+    private func copyReplacingDestination(from sourceURL: URL, to destinationURL: URL) throws {
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            try fileManager.removeItem(at: destinationURL)
+        }
+
+        try fileManager.copyItem(at: sourceURL, to: destinationURL)
     }
 
     private func isMissingFileError(_ error: Error) -> Bool {

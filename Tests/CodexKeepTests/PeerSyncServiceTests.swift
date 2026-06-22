@@ -73,6 +73,33 @@ import Testing
     #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md").path))
 }
 
+@Test func peerSyncSafetySnapshotToleratesDuplicateTargets() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    let plan = try #require(fixture.makePlans().first)
+    let item = try #require(plan.items.first { $0.backupRelativePath == "Codex/skills/shared/SKILL.md" })
+    var duplicate = item
+    duplicate.id = "duplicate-\(item.id)"
+    let duplicatedPlan = PeerSyncPlan(
+        peerName: plan.peerName,
+        sourceURL: plan.sourceURL,
+        manifest: plan.manifest,
+        items: [item, duplicate],
+        warnings: []
+    )
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: [duplicatedPlan],
+        selectedItemIDs: [item.id, duplicate.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.appliedItemCount == 2)
+    #expect(fixture.fileManager.fileExists(atPath: result.safetySnapshotURL.appendingPathComponent("manifest.json").path))
+}
+
 @Test func peerDiscoveryShowsVisibleMachineFoldersBeforeManifestHydrates() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
