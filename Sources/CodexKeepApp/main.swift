@@ -817,7 +817,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func presentAutomationMoveSuccess(_ result: AutomationMoveResult, targetMachineName: String) {
         let alert = NSAlert()
         alert.messageText = "Automations moved"
-        alert.informativeText = "\(result.movedCount) automations were prepared for \(targetMachineName). Open Manage Automations on that Mac to install the incoming move. Safety snapshot: \(result.safetySnapshotURL.path)"
+        alert.informativeText = "\(result.movedCount) automations were prepared for \(targetMachineName). They will be installed automatically the next time Codex Keep backs up on that Mac. Safety snapshot: \(result.safetySnapshotURL.path)"
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Open Safety Snapshot")
 
@@ -853,7 +853,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     nonisolated private static func runBackupAndPeerSync(settings: BackupSettings) throws -> BackupAndPeerSyncResult {
         let backupService = BackupService()
         let peerSyncService = PeerSyncService()
+        let automationMoveService = AutomationMoveService()
         var workingSettings = settings
+        _ = try automationMoveService.consumePendingMoves(settings: workingSettings)
         var backupResult = try backupService.runBackup(settings: workingSettings)
 
         let settingsAfterLocalState = peerSyncService.settingsByRecordingLocalState(
