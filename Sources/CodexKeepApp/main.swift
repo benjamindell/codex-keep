@@ -626,7 +626,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Self.logRepositoryPullLine("Repository pull started with Codex Keep \(Self.appVersionDescription())")
             let repositoriesRoot = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent("Repositories", isDirectory: true)
-            let result = RepositoryPullService().pullRepositories(repositoriesRoot: repositoriesRoot)
+            let result = RepositoryPullService().pullRepositories(repositoriesRoot: repositoriesRoot) { message in
+                Self.logRepositoryPullLine(message)
+            }
             Self.writeRepositoryPullLog(result)
 
             await MainActor.run {

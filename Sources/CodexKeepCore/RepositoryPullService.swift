@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 public enum RepositoryPullStatus: String, Codable, Equatable, Sendable {
@@ -10,6 +11,7 @@ public enum RepositoryPullStatus: String, Codable, Equatable, Sendable {
     case skippedMergeInProgress
     case skippedLocalAhead
     case skippedConflicts
+    case skippedTimedOut
     case failed
 }
 
@@ -49,21 +51,31 @@ public struct RepositoryPullRunResult: Codable, Equatable, Sendable {
 public final class RepositoryPullService {
     private let fileManager: FileManager
     private let gitExecutableURL: URL
+    private let commandTimeout: TimeInterval
 
     public init(
         fileManager: FileManager = .default,
-        gitExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/git")
+        gitExecutableURL: URL = URL(fileURLWithPath: "/usr/bin/git"),
+        commandTimeout: TimeInterval = 120
     ) {
         self.fileManager = fileManager
         self.gitExecutableURL = gitExecutableURL
+        self.commandTimeout = commandTimeout
     }
 
     public func pullRepositories(
         repositoriesRoot: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Repositories", isDirectory: true),
-        now: Date = Date()
+        now: Date = Date(),
+        progress: ((String) -> Void)? = nil
     ) -> RepositoryPullRunResult {
         let repositories = discoverRepositories(in: repositoriesRoot)
-        let results = repositories.map { pullRepository(at: $0) }
+        progress?("Found \(repositories.count) Git repositories in \(repositoriesRoot.standardizedFileURL.path)")
+        let results = repositories.map { repositoryURL in
+            progress?("Checking \(repositoryURL.lastPathComponent)")
+            let result = pullRepository(at: repositoryURL)
+            progress?("\(repositoryURL.lastPathComponent): \(result.status.rawValue) - \(result.message)")
+            return result
+        }
         return RepositoryPullRunResult(
             repositoriesRootPath: repositoriesRoot.standardizedFileURL.path,
             startedAt: now,
@@ -151,6 +163,10 @@ public final class RepositoryPullService {
                 return result(.skippedConflicts, "Skipped because Git could not complete a clean merge.")
             }
         } catch {
+            if (error as? RepositoryPullServiceError)?.isTimedOut == true {
+                return result(.skippedTimedOut, error.localizedDescription)
+            }
+
             return result(.failed, error.localizedDescription)
         }
     }
@@ -181,6 +197,9 @@ public final class RepositoryPullService {
         process.environment = ProcessInfo.processInfo.environment.merging([
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_MERGE_AUTOEDIT": "no",
+            "GIT_ASKPASS": "/usr/bin/false",
+            "SSH_ASKPASS": "/usr/bin/false",
+            "GCM_INTERACTIVE": "Never",
             "LC_ALL": "C"
         ]) { _, new in new }
 
@@ -190,7 +209,27 @@ public final class RepositoryPullService {
         process.standardError = errorPipe
 
         try process.run()
-        process.waitUntilExit()
+        let semaphore = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            semaphore.signal()
+        }
+
+        if semaphore.wait(timeout: .now() + commandTimeout) == .timedOut {
+            if process.isRunning {
+                process.terminate()
+            }
+            if semaphore.wait(timeout: .now() + 5) == .timedOut, process.isRunning {
+                Darwin.kill(process.processIdentifier, SIGKILL)
+                _ = semaphore.wait(timeout: .now() + 5)
+            }
+
+            throw RepositoryPullServiceError.gitTimedOut(
+                arguments: arguments,
+                timeout: commandTimeout,
+                result: GitCommandResult(status: process.terminationStatus, output: "", errorOutput: "")
+            )
+        }
 
         let output = String(data: outputPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
         let errorOutput = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
@@ -216,6 +255,16 @@ private struct GitCommandResult: Equatable {
 
 private enum RepositoryPullServiceError: LocalizedError {
     case gitFailed(arguments: [String], result: GitCommandResult)
+    case gitTimedOut(arguments: [String], timeout: TimeInterval, result: GitCommandResult)
+
+    var isTimedOut: Bool {
+        switch self {
+        case .gitTimedOut:
+            true
+        case .gitFailed:
+            false
+        }
+    }
 
     var errorDescription: String? {
         switch self {
@@ -226,6 +275,10 @@ private enum RepositoryPullServiceError: LocalizedError {
             }
 
             return "git \(arguments.joined(separator: " ")) failed: \(message)"
+        case let .gitTimedOut(arguments, timeout, result):
+            let message = result.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let suffix = message.isEmpty ? "" : " Last error output: \(message)"
+            return "Skipped because git \(arguments.joined(separator: " ")) did not finish within \(Int(timeout)) seconds.\(suffix)"
         }
     }
 }

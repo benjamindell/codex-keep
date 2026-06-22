@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import CodexKeepCore
 
+@Suite(.serialized)
+struct RepositoryPullServiceTests {
 @Test func repositoryPullFastForwardsCleanRepositories() throws {
     let fixture = try RepositoryPullFixture()
     defer { fixture.cleanup() }
@@ -84,6 +86,39 @@ import Testing
     #expect(result.results.map(\.status) == [.skippedConflicts])
     #expect(try String(contentsOf: fixture.secondary.appendingPathComponent("README.md"), encoding: .utf8) == "local\n")
     #expect(!fixture.fileManager.fileExists(atPath: fixture.secondary.appending(relativePath: ".git/MERGE_HEAD").path))
+}
+
+@Test func repositoryPullTimesOutHungGitCommands() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let repositoriesRoot = root.appendingPathComponent("Repositories", isDirectory: true)
+    let repository = repositoriesRoot.appendingPathComponent("hung-repo", isDirectory: true)
+    let fakeGit = root.appendingPathComponent("git")
+
+    try fileManager.createDirectory(at: repository.appendingPathComponent(".git", isDirectory: true), withIntermediateDirectories: true)
+    try """
+    #!/bin/sh
+    exec sleep 10
+    """.write(to: fakeGit, atomically: true, encoding: .utf8)
+    try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeGit.path)
+
+    var progressMessages: [String] = []
+    let result = RepositoryPullService(
+        fileManager: fileManager,
+        gitExecutableURL: fakeGit,
+        commandTimeout: 0.1
+    ).pullRepositories(repositoriesRoot: repositoriesRoot) { message in
+        progressMessages.append(message)
+    }
+
+    #expect(result.results.map(\.status) == [.skippedTimedOut])
+    #expect(progressMessages.contains("Checking hung-repo"))
+    #expect(progressMessages.contains {
+        $0.contains("hung-repo: skippedTimedOut")
+    })
+}
 }
 
 private final class RepositoryPullFixture {
