@@ -140,8 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if let result = lastResult {
-            if let lastPeerSyncResult, lastPeerSyncResult.appliedItemCount > 0 {
-                return "Last synced \(lastPeerSyncResult.appliedItemCount) peer files \(relativeSyncTime(since: result.manifest.createdAt))"
+            if let lastPeerSyncResult {
+                let peerSummary = peerSyncStatusSummary(lastPeerSyncResult)
+                if !peerSummary.isEmpty {
+                    return "\(peerSummary) \(relativeSyncTime(since: result.manifest.createdAt))"
+                }
             }
 
             return "Last synced \(relativeSyncTime(since: result.manifest.createdAt))"
@@ -152,6 +155,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         return "Codex Keep is ready"
+    }
+
+    private func peerSyncStatusSummary(_ result: PeerSyncApplyResult) -> String {
+        if result.appliedItemCount > 0, result.skippedItemCount > 0 {
+            return "Synced \(result.appliedItemCount), skipped \(result.skippedItemCount) peer files"
+        }
+
+        if result.appliedItemCount > 0 {
+            return "Last synced \(result.appliedItemCount) peer files"
+        }
+
+        if result.skippedItemCount > 0 {
+            return "Skipped \(result.skippedItemCount) peer files still downloading"
+        }
+
+        return ""
     }
 
     private func relativeSyncTime(since date: Date, now: Date = Date()) -> String {
@@ -867,7 +886,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func presentPeerSyncSuccess(_ result: PeerSyncApplyResult) {
         let alert = NSAlert()
         alert.messageText = "Peer changes synced"
-        alert.informativeText = "\(result.appliedItemCount) files updated, \(result.conflictCopyCount) conflict copies saved, \(result.deletedItemCount) files deleted, \(result.skippedItemCount) stale files skipped. Safety snapshot: \(result.safetySnapshotURL.path)"
+        let skippedText = result.skippedItemCount > 0
+            ? ", \(result.skippedItemCount) files still downloading skipped"
+            : ""
+        alert.informativeText = "\(result.appliedItemCount) files updated, \(result.conflictCopyCount) conflict copies saved, \(result.deletedItemCount) files deleted\(skippedText). Safety snapshot: \(result.safetySnapshotURL.path)"
         alert.addButton(withTitle: "OK")
         alert.addButton(withTitle: "Open Safety Snapshot")
 
@@ -956,6 +978,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 )
                 workingSettings = applied.updatedSettings
                 peerSyncResult = applied
+                if applied.skippedItemCount > 0 {
+                    let skippedPaths = applied.skippedBackupRelativePaths.prefix(12).joined(separator: ", ")
+                    let remainingCount = max(applied.skippedBackupRelativePaths.count - 12, 0)
+                    let suffix = remainingCount > 0 ? ", +\(remainingCount) more" : ""
+                    logBackupPhase("Skipped \(applied.skippedItemCount) peer sync items still downloading: \(skippedPaths)\(suffix)")
+                }
                 logBackupPhase("Refreshing backup after peer sync")
                 backupResult = try backupService.runBackup(settings: workingSettings)
             } else if workingSettings != settingsAfterLocalState {

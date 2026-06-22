@@ -78,6 +78,7 @@ public struct PeerSyncApplyResult: Equatable, Sendable {
     public var conflictCopyCount: Int
     public var deletedItemCount: Int
     public var skippedItemCount: Int
+    public var skippedBackupRelativePaths: [String]
     public var safetySnapshotURL: URL
     public var updatedSettings: BackupSettings
 }
@@ -325,6 +326,7 @@ public final class PeerSyncService {
         var conflictCopyCount = 0
         var deletedItemCount = 0
         var skippedItemCount = 0
+        var skippedBackupRelativePaths: [String] = []
 
         do {
             for (plan, items) in selectedItemsByPlan {
@@ -334,6 +336,7 @@ public final class PeerSyncService {
                         let sourceURL = plan.sourceURL.appendingRelativePath(item.backupRelativePath)
                         guard preparePeerSourceFile(at: sourceURL) else {
                             skippedItemCount += 1
+                            skippedBackupRelativePaths.append(item.backupRelativePath)
                             continue
                         }
 
@@ -349,6 +352,7 @@ public final class PeerSyncService {
                         let sourceURL = plan.sourceURL.appendingRelativePath(item.backupRelativePath)
                         guard preparePeerSourceFile(at: sourceURL) else {
                             skippedItemCount += 1
+                            skippedBackupRelativePaths.append(item.backupRelativePath)
                             continue
                         }
 
@@ -391,6 +395,7 @@ public final class PeerSyncService {
             conflictCopyCount: conflictCopyCount,
             deletedItemCount: deletedItemCount,
             skippedItemCount: skippedItemCount,
+            skippedBackupRelativePaths: skippedBackupRelativePaths,
             safetySnapshotURL: safetySnapshotURL,
             updatedSettings: updatedSettings
         )

@@ -11,6 +11,7 @@ import Testing
     let items = Dictionary(uniqueKeysWithValues: plans.flatMap(\.items).map { ($0.backupRelativePath, $0) })
 
     #expect(items["Codex/skills/shared/SKILL.md"]?.status == .incomingChanged)
+    #expect(items["Codex/skills/shared/README.md"]?.status == .incomingNew)
     #expect(items["Codex/skills/new/SKILL.md"]?.status == .incomingNew)
     #expect(items["Codex/skills/conflict/SKILL.md"]?.status == .conflict)
     #expect(items["Codex/skills/local-only/SKILL.md"]?.status == .localChanged)
@@ -42,6 +43,7 @@ import Testing
     )
 
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/shared/SKILL.md"), encoding: .utf8) == "peer update")
+    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/shared/README.md"), encoding: .utf8) == "peer readme")
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md"), encoding: .utf8) == "peer new")
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/conflict/SKILL.md"), encoding: .utf8) == "local conflict")
     #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/deleted/SKILL.md").path))
@@ -58,7 +60,7 @@ import Testing
 
     let plans = try fixture.makePlans()
     let selectedIDs = Set(plans.flatMap(\.items).compactMap { item in
-        item.status == .incomingNew ? item.id : nil
+        item.backupRelativePath == "Codex/skills/new/SKILL.md" ? item.id : nil
     })
     try fixture.fileManager.removeItem(at: fixture.peerLatest.appending(relativePath: "Codex/skills/new/SKILL.md"))
 
@@ -71,6 +73,7 @@ import Testing
 
     #expect(result.appliedItemCount == 0)
     #expect(result.skippedItemCount == 1)
+    #expect(result.skippedBackupRelativePaths == ["Codex/skills/new/SKILL.md"])
     #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md").path))
 }
 
@@ -137,6 +140,7 @@ private final class PeerSyncFixture {
         try writeLocalSkill("local-only", content: "local change")
         try writeLocalSkill("deleted", content: "delete me")
         try writePeerSkill("shared", content: "peer update")
+        try writePeerFile("shared/README.md", content: "peer readme")
         try writePeerSkill("new", content: "peer new")
         try writePeerSkill("conflict", content: "peer conflict")
         try writePeerSkill("local-only", content: "base")
@@ -234,6 +238,17 @@ private final class PeerSyncFixture {
                 modifiedAt: Date(timeIntervalSince1970: 0)
             )
         }
+        let readmeURL = peerLatest.appending(relativePath: "Codex/skills/shared/README.md")
+        files.append(BackupManifestFile(
+            itemID: "codex-skills",
+            itemDisplayName: "Custom Codex skills",
+            relativePath: "shared/README.md",
+            backupRelativePath: "Codex/skills/shared/README.md",
+            sourcePath: "/peer/.codex/skills/shared/README.md",
+            byteCount: UInt64((try Data(contentsOf: readmeURL)).count),
+            sha256: try fileSHA256(readmeURL),
+            modifiedAt: Date(timeIntervalSince1970: 0)
+        ))
         let metadataURL = peerLatest.appending(relativePath: "Codex/skills/shared/.DS_Store")
         files.append(BackupManifestFile(
             itemID: "codex-skills",

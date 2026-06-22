@@ -1,9 +1,11 @@
-# Codex Keep 0.1.22
+# Codex Keep 0.1.23
 
-Skips peer-sync files that are still only iCloud placeholders.
+Shows exactly when trusted-machine sync skipped peer files that are still downloading from iCloud.
 
-- Avoids blocking automatic peer sync when a peer backup file exists but is not locally downloaded yet.
-- Requests the iCloud download and skips that file for the current run.
+- Logs skipped peer file paths in `~/Library/Logs/Codex Keep/last-run.log`.
+- Shows skipped peer file counts in the menu bar status instead of looking like a clean no-op.
+- Adds regression coverage for syncing a new file inside an existing skill folder.
+- Keeps iCloud placeholder skipping from 0.1.22 so automatic sync does not hang while waiting for iCloud.
 - Keeps the two-minute watchdog and diagnostic log from 0.1.21.
 - Keeps non-blocking iCloud automation move handling from 0.1.20.
 - Keeps automatic install for explicitly moved automations from 0.1.19.
