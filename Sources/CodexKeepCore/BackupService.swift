@@ -305,27 +305,36 @@ public final class BackupService {
 
         let contents = try fileManager.contentsOfDirectory(
             at: sourceURL,
-            includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey],
             options: []
         )
 
         var stats = CopyStats()
-        for sourceChild in contents where isRepositoryDevFile(sourceChild.lastPathComponent) {
-            let values = try sourceChild.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            guard values.isRegularFile == true else {
-                continue
-            }
-
+        for sourceChild in contents where isRepositoryDevRootItem(sourceChild.lastPathComponent) {
             let destinationChild = destinationURL.appendingPathComponent(sourceChild.lastPathComponent)
-            try fileManager.copyItem(at: sourceChild, to: destinationChild)
-            stats.fileCount += 1
-            stats.byteCount += UInt64(values.fileSize ?? 0)
+            let values = try sourceChild.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
+
+            if values.isDirectory == true, sourceChild.lastPathComponent == ".vscode" {
+                stats.merge(try copyDirectory(from: sourceChild, to: destinationChild, excluding: []))
+            } else if values.isRegularFile == true {
+                try fileManager.copyItem(at: sourceChild, to: destinationChild)
+                stats.fileCount += 1
+                stats.byteCount += UInt64(values.fileSize ?? 0)
+            }
         }
 
         return stats
     }
 
-    private func isRepositoryDevFile(_ fileName: String) -> Bool {
+    private func isRepositoryDevRootItem(_ fileName: String) -> Bool {
+        if fileName == "fabfile_local.py" || fileName == "local_settings.py" || fileName == ".vscode" {
+            return true
+        }
+
+        return isRepositoryEnvFile(fileName)
+    }
+
+    private func isRepositoryEnvFile(_ fileName: String) -> Bool {
         guard fileName == ".env" || fileName.hasPrefix(".env.") else {
             return false
         }
@@ -532,4 +541,9 @@ private extension URL {
 private struct CopyStats: Equatable {
     var fileCount: Int = 0
     var byteCount: UInt64 = 0
+
+    mutating func merge(_ other: CopyStats) {
+        fileCount += other.fileCount
+        byteCount += other.byteCount
+    }
 }

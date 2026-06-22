@@ -1,7 +1,7 @@
-# Codex Keep 0.1.26
+# Codex Keep 0.1.27
 
-Adds opt-in sync for local Git repository dev files.
+Expands local Git repository dev-file sync.
 
-- Adds a `Sync Local Repo Dev Files` menu toggle.
-- Backs up root `.env` and `.env.*` files for discovered Git repositories, excluding example/template files.
-- Syncs those files only when the receiving Mac already has the same Git repository checkout.
+- Adds root `fabfile_local.py` and `local_settings.py` to the existing opt-in repo dev-file sync.
+- Adds root `.vscode` directory sync under the same option.
+- Keeps repo-dev sync limited to trusted Macs that already have the same Git repository checkout.
