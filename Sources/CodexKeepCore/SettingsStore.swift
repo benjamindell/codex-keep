@@ -17,8 +17,10 @@ public final class SettingsStore {
         self.settingsURL = settingsURL ?? Self.defaultSettingsURL(fileManager: fileManager)
 
         self.decoder = JSONDecoder()
+        self.decoder.dateDecodingStrategy = .iso8601
         self.encoder = JSONEncoder()
         self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        self.encoder.dateEncodingStrategy = .iso8601
 
         if let data = try? Data(contentsOf: self.settingsURL),
            let decoded = try? self.decoder.decode(BackupSettings.self, from: data) {

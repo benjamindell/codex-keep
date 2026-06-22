@@ -10,6 +10,7 @@ The first version is deliberately conservative:
 - It writes a `manifest.json` alongside the latest backup.
 - It keeps one daily snapshot for each of the last seven days.
 - Deploying a backup to the current Mac is intentional: Codex Keep shows a dry-run checklist and saves a safety snapshot before replacing selected local files.
+- Trusted-machine sync is opt-in: choose peer Macs first, review their changes, then enable automatic sync for non-conflicting file updates when you are ready.
 
 ## Default backup set
 
@@ -31,6 +32,16 @@ Codex Keep reviews the backup before writing anything:
 - Shared items like `AGENTS.md`, config, rules, and skills are shown as broader items.
 - New and changed items are selected by default; unchanged items are left unchecked.
 - A restore safety snapshot of the selected local items is written under `Restore Safety` before anything is replaced.
+
+## Syncing trusted Macs
+
+Use `Trusted Machines...` to choose which other Codex Keep machine folders this Mac should trust. Then use `Review Peer Changes...` to inspect file-level differences from those machines.
+
+- Non-conflicting peer creates and updates are selected by default.
+- Automatic trusted-machine sync applies only non-conflicting file creates and updates.
+- Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.
+- Peer deletions require review and create tombstones so the deletion can propagate deliberately.
+- Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted.
 
 ## Development
 

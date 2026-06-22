@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settingsStore = SettingsStore()
     private let backupService = BackupService()
     private let deployService = DeployService()
+    private let peerSyncService = PeerSyncService()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var timer: Timer?
     private var animationTimer: Timer?
     private var lastResult: BackupResult?
+    private var lastPeerSyncResult: PeerSyncApplyResult?
     private var lastError: Error?
     private weak var statusMenuItem: NSMenuItem?
     private var isBackingUp = false
@@ -71,8 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b"))
+        menu.addItem(actionItem(title: "Review Peer Changes...", action: #selector(reviewPeerChanges), keyEquivalent: "r"))
         menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
         menu.addItem(actionItem(title: "Deploy Backup to This Mac...", action: #selector(deployBackupToThisMac), keyEquivalent: "d"))
+        menu.addItem(actionItem(title: "Trusted Machines...", action: #selector(configureTrustedMachines), keyEquivalent: "t"))
+        menu.addItem(autoSyncItem())
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(launchAtLoginItem())
@@ -99,6 +104,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return item
     }
 
+    private func autoSyncItem() -> NSMenuItem {
+        let item = actionItem(title: "Auto-sync Trusted Machines", action: #selector(toggleAutoSync), keyEquivalent: "")
+        item.state = settingsStore.settings.automaticallySyncTrustedMachines ? .on : .off
+        return item
+    }
+
     private var isLaunchAtLoginEnabled: Bool {
         SMAppService.mainApp.status == .enabled
     }
@@ -109,6 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         if let result = lastResult {
+            if let lastPeerSyncResult, lastPeerSyncResult.appliedItemCount > 0 {
+                return "Last synced \(lastPeerSyncResult.appliedItemCount) peer files \(relativeSyncTime(since: result.manifest.createdAt))"
+            }
+
             return "Last synced \(relativeSyncTime(since: result.manifest.createdAt))"
         }
 
@@ -136,6 +151,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSWorkspace.shared.open(destinationURL)
     }
 
+    @objc private func reviewPeerChanges() {
+        do {
+            let backupResult = try BackupService().runBackup(settings: settingsStore.settings)
+            try settingsStore.update { settings in
+                settings = peerSyncService.settingsByRecordingLocalState(
+                    settings,
+                    localManifest: backupResult.manifest
+                )
+            }
+
+            let refreshedBackupResult = try BackupService().runBackup(settings: settingsStore.settings)
+            let plans = try peerSyncService.makePlans(
+                settings: settingsStore.settings,
+                localManifest: refreshedBackupResult.manifest
+            )
+            guard let selectedItemIDs = presentPeerSyncPlans(plans) else {
+                return
+            }
+
+            let result = try peerSyncService.apply(
+                plans: plans,
+                selectedItemIDs: selectedItemIDs,
+                settings: settingsStore.settings
+            )
+            try settingsStore.update { settings in
+                settings = result.updatedSettings
+            }
+            lastPeerSyncResult = result
+            lastResult = try BackupService().runBackup(settings: settingsStore.settings)
+            presentPeerSyncSuccess(result)
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not sync peer changes.")
+        }
+
+        rebuildMenu()
+    }
+
     @objc private func chooseBackupFolder() {
         let panel = NSOpenPanel()
         panel.title = "Choose Codex Keep Backup Folder"
@@ -158,6 +211,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             lastError = error
             lastResult = nil
             presentError(error)
+        }
+
+        rebuildMenu()
+    }
+
+    @objc private func configureTrustedMachines() {
+        let availablePeers = peerSyncService.availablePeerMachineNames(settings: settingsStore.settings)
+
+        let alert = NSAlert()
+        alert.messageText = "Trusted Machines"
+        alert.informativeText = availablePeers.isEmpty
+            ? "No other Codex Keep machine backups were found in the selected backup folder yet."
+            : "Choose which machine backups this Mac should review and sync from."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let checklist = trustedMachinesChecklistView(machineNames: availablePeers)
+        alert.accessoryView = checklist.view
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        let selectedMachineNames = Set(checklist.checkboxes.compactMap { machineName, checkbox in
+            checkbox.state == .on ? machineName : nil
+        })
+
+        do {
+            try settingsStore.update { settings in
+                settings.trustedMachineNames = selectedMachineNames
+                if selectedMachineNames.isEmpty {
+                    settings.automaticallySyncTrustedMachines = false
+                }
+            }
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not save trusted machines.")
         }
 
         rebuildMenu()
@@ -216,6 +306,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         rebuildMenu()
     }
 
+    @objc private func toggleAutoSync() {
+        if settingsStore.settings.trustedMachineNames.isEmpty,
+           !settingsStore.settings.automaticallySyncTrustedMachines {
+            configureTrustedMachines()
+            return
+        }
+
+        do {
+            try settingsStore.update { settings in
+                settings.automaticallySyncTrustedMachines.toggle()
+            }
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not update auto-sync.")
+        }
+
+        rebuildMenu()
+    }
+
     @objc private func quit() {
         NSApp.terminate(nil)
     }
@@ -236,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         Task.detached {
             let result = Result {
-                try BackupService().runBackup(settings: settings)
+                try Self.runBackupAndPeerSync(settings: settings)
             }
 
             let elapsed = Date().timeIntervalSince(startedAt)
@@ -250,12 +359,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.isBackingUp = false
 
                 switch result {
-                case let .success(backupResult):
-                    self.lastResult = backupResult
+                case let .success(syncRunResult):
+                    if syncRunResult.updatedSettings != self.settingsStore.settings {
+                        do {
+                            try self.settingsStore.update { settings in
+                                settings = syncRunResult.updatedSettings
+                            }
+                        } catch {
+                            self.lastError = error
+                            self.lastResult = nil
+                            self.presentError(error)
+                            self.rebuildMenu()
+                            return
+                        }
+                    }
+
+                    self.lastResult = syncRunResult.backupResult
+                    self.lastPeerSyncResult = syncRunResult.peerSyncResult
                     self.lastError = nil
                 case let .failure(error):
                     self.lastError = error
                     self.lastResult = nil
+                    self.lastPeerSyncResult = nil
                     self.presentError(error)
                 }
 
@@ -412,6 +537,180 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return lines.joined(separator: "\n\n")
     }
 
+    private func trustedMachinesChecklistView(machineNames: [String]) -> (view: NSView, checkboxes: [(String, NSButton)]) {
+        let stackView = NSStackView()
+        stackView.orientation = .vertical
+        stackView.alignment = .leading
+        stackView.spacing = 6
+        stackView.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+
+        var checkboxes: [(String, NSButton)] = []
+
+        for machineName in machineNames {
+            let checkbox = NSButton(checkboxWithTitle: machineName, target: nil, action: nil)
+            checkbox.state = settingsStore.settings.trustedMachineNames.contains(machineName) ? .on : .off
+            checkboxes.append((machineName, checkbox))
+            stackView.addArrangedSubview(checkbox)
+        }
+
+        if machineNames.isEmpty {
+            let label = NSTextField(labelWithString: "Run Codex Keep on another Mac using the same backup folder, then come back here.")
+            label.maximumNumberOfLines = 0
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 420).isActive = true
+            stackView.addArrangedSubview(label)
+        }
+
+        return (stackView, checkboxes)
+    }
+
+    private func presentPeerSyncPlans(_ plans: [PeerSyncPlan]) -> Set<String>? {
+        let visibleItems = plans.flatMap { plan in
+            plan.items.filter { item in
+                switch item.status {
+                case .incomingNew, .incomingChanged, .conflict, .peerDeletedReviewRequired:
+                    return true
+                case .unchanged, .localChanged:
+                    return false
+                }
+            }
+        }
+        let selectableItems = visibleItems.filter { isSelectablePeerSyncItem($0) }
+
+        let alert = NSAlert()
+        alert.messageText = visibleItems.isEmpty ? "No peer changes to sync" : "Sync peer changes?"
+        alert.informativeText = peerSyncPlanSummary(plans)
+        alert.alertStyle = plans.contains { $0.reviewItemCount > 0 } ? .warning : .informational
+
+        if visibleItems.isEmpty {
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return nil
+        }
+
+        if selectableItems.isEmpty {
+            alert.messageText = "Peer changes need manual review"
+            alert.addButton(withTitle: "OK")
+            alert.accessoryView = peerSyncChecklistView(for: plans).view
+            alert.runModal()
+            return nil
+        }
+
+        alert.addButton(withTitle: "Sync Selected")
+        alert.addButton(withTitle: "Cancel")
+
+        let checklist = peerSyncChecklistView(for: plans)
+        alert.accessoryView = checklist.view
+
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return nil
+        }
+
+        let selectedIDs = Set(checklist.checkboxes.compactMap { id, checkbox in
+            checkbox.state == .on ? id : nil
+        })
+
+        if selectedIDs.isEmpty {
+            presentError(
+                PeerSyncServiceError.noSelectedItems,
+                messageText: "Codex Keep could not sync peer changes."
+            )
+            return nil
+        }
+
+        return selectedIDs
+    }
+
+    private func peerSyncChecklistView(for plans: [PeerSyncPlan]) -> (view: NSView, checkboxes: [(String, NSButton)]) {
+        let stackView = NSStackView()
+        stackView.orientation = .vertical
+        stackView.alignment = .leading
+        stackView.spacing = 6
+        stackView.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
+
+        var checkboxes: [(String, NSButton)] = []
+
+        for plan in plans {
+            for item in plan.items {
+                switch item.status {
+                case .incomingNew, .incomingChanged, .conflict, .peerDeletedReviewRequired:
+                    let checkbox = NSButton(checkboxWithTitle: peerSyncCheckboxTitle(for: item), target: nil, action: nil)
+                    checkbox.state = item.isAutomatic ? .on : .off
+                    checkbox.isEnabled = isSelectablePeerSyncItem(item)
+                    checkbox.toolTip = item.targetPath
+                    checkbox.lineBreakMode = .byTruncatingMiddle
+                    checkbox.widthAnchor.constraint(lessThanOrEqualToConstant: 620).isActive = true
+                    checkboxes.append((item.id, checkbox))
+                    stackView.addArrangedSubview(checkbox)
+                case .unchanged, .localChanged:
+                    continue
+                }
+            }
+        }
+
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        scrollView.documentView = stackView
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.widthAnchor.constraint(equalToConstant: 640).isActive = true
+        let checklistHeight = CGFloat(min(380, max(120, checkboxes.count * 26)))
+        scrollView.heightAnchor.constraint(equalToConstant: checklistHeight).isActive = true
+
+        return (scrollView, checkboxes)
+    }
+
+    private func peerSyncCheckboxTitle(for item: PeerSyncPlanItem) -> String {
+        let status: String
+        switch item.status {
+        case .incomingNew:
+            status = "new from \(item.peerName)"
+        case .incomingChanged:
+            status = "changed on \(item.peerName)"
+        case .conflict:
+            status = item.peerSHA256 == nil ? "delete conflict" : "conflict copy"
+        case .peerDeletedReviewRequired:
+            status = "delete requested by \(item.peerName)"
+        case .unchanged:
+            status = "unchanged"
+        case .localChanged:
+            status = "local changed"
+        }
+
+        return "\(item.displayName) (\(status))"
+    }
+
+    private func isSelectablePeerSyncItem(_ item: PeerSyncPlanItem) -> Bool {
+        switch item.status {
+        case .incomingNew, .incomingChanged, .peerDeletedReviewRequired:
+            return true
+        case .conflict:
+            return item.peerSHA256 != nil
+        case .unchanged, .localChanged:
+            return false
+        }
+    }
+
+    private func peerSyncPlanSummary(_ plans: [PeerSyncPlan]) -> String {
+        let incoming = plans.reduce(0) { $0 + $1.incomingItemCount }
+        let review = plans.reduce(0) { $0 + $1.reviewItemCount }
+        let localChanged = plans.flatMap(\.items).filter { $0.status == .localChanged }.count
+        var lines = [
+            "\(incoming) non-conflicting peer files are selected by default. \(review) conflicts or deletions need review."
+        ]
+
+        if localChanged > 0 {
+            lines.append("\(localChanged) files changed locally and will be left for the peer Mac to pull.")
+        }
+
+        let warnings = plans.flatMap(\.warnings)
+        if !warnings.isEmpty {
+            lines.append("Backup warnings: \(warnings.joined(separator: " "))")
+        }
+
+        lines.append("Codex Keep saves a sync safety snapshot before changing or deleting local files.")
+        return lines.joined(separator: "\n\n")
+    }
+
     private func presentDeploySuccess(_ result: DeployResult) {
         let alert = NSAlert()
         alert.messageText = "Backup deployed"
@@ -423,6 +722,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSWorkspace.shared.open(result.safetySnapshotURL)
         }
     }
+
+    private func presentPeerSyncSuccess(_ result: PeerSyncApplyResult) {
+        let alert = NSAlert()
+        alert.messageText = "Peer changes synced"
+        alert.informativeText = "\(result.appliedItemCount) files updated, \(result.conflictCopyCount) conflict copies saved, \(result.deletedItemCount) files deleted. Safety snapshot: \(result.safetySnapshotURL.path)"
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open Safety Snapshot")
+
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.open(result.safetySnapshotURL)
+        }
+    }
+
+    nonisolated private static func runBackupAndPeerSync(settings: BackupSettings) throws -> BackupAndPeerSyncResult {
+        let backupService = BackupService()
+        let peerSyncService = PeerSyncService()
+        var workingSettings = settings
+        var backupResult = try backupService.runBackup(settings: workingSettings)
+
+        let settingsAfterLocalState = peerSyncService.settingsByRecordingLocalState(
+            workingSettings,
+            localManifest: backupResult.manifest
+        )
+        if settingsAfterLocalState != workingSettings {
+            workingSettings = settingsAfterLocalState
+            backupResult = try backupService.runBackup(settings: workingSettings)
+        }
+
+        var peerSyncResult: PeerSyncApplyResult?
+        if workingSettings.automaticallySyncTrustedMachines,
+           !workingSettings.trustedMachineNames.isEmpty {
+            let plans = try peerSyncService.makePlans(
+                settings: workingSettings,
+                localManifest: backupResult.manifest
+            )
+            workingSettings = peerSyncService.settingsByRecordingUnchangedPeerFiles(
+                workingSettings,
+                plans: plans
+            )
+
+            let automaticItemIDs = Set(plans.flatMap(\.automaticItemIDs))
+            if !automaticItemIDs.isEmpty {
+                let applied = try peerSyncService.apply(
+                    plans: plans,
+                    selectedItemIDs: automaticItemIDs,
+                    settings: workingSettings
+                )
+                workingSettings = applied.updatedSettings
+                peerSyncResult = applied
+                backupResult = try backupService.runBackup(settings: workingSettings)
+            } else if workingSettings != settingsAfterLocalState {
+                backupResult = try backupService.runBackup(settings: workingSettings)
+            }
+        }
+
+        return BackupAndPeerSyncResult(
+            backupResult: backupResult,
+            peerSyncResult: peerSyncResult,
+            updatedSettings: workingSettings
+        )
+    }
+}
+
+private struct BackupAndPeerSyncResult: Sendable {
+    var backupResult: BackupResult
+    var peerSyncResult: PeerSyncApplyResult?
+    var updatedSettings: BackupSettings
 }
 
 let app = NSApplication.shared

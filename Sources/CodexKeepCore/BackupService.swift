@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum BackupServiceError: LocalizedError, Equatable {
@@ -42,6 +43,7 @@ public final class BackupService {
         try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: true)
 
         var manifestItems: [BackupManifestItem] = []
+        var manifestFiles: [BackupManifestFile] = []
         var warnings: [String] = []
 
         for item in items where settings.enabledItemIDs.contains(item.id) {
@@ -80,6 +82,11 @@ public final class BackupService {
                     to: destinationURL,
                     excluding: Set(item.excludedRelativePaths)
                 )
+                manifestFiles.append(contentsOf: try fileRecords(
+                    for: item,
+                    sourceURL: sourceURL,
+                    backupURL: destinationURL
+                ))
 
                 manifestItems.append(BackupManifestItem(
                     id: item.id,
@@ -112,6 +119,10 @@ public final class BackupService {
             createdAt: now,
             machineName: machineName,
             items: manifestItems,
+            files: manifestFiles.sorted { first, second in
+                first.backupRelativePath.localizedStandardCompare(second.backupRelativePath) == .orderedAscending
+            },
+            tombstones: manifestTombstones(from: settings, copiedFiles: manifestFiles),
             warnings: warnings
         )
 
@@ -335,6 +346,99 @@ public final class BackupService {
     private func byteCount(for url: URL) throws -> UInt64 {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         return UInt64(values.fileSize ?? 0)
+    }
+
+    private func fileRecords(
+        for item: BackupItem,
+        sourceURL: URL,
+        backupURL: URL
+    ) throws -> [BackupManifestFile] {
+        var isDirectory: ObjCBool = false
+        fileManager.fileExists(atPath: backupURL.path, isDirectory: &isDirectory)
+
+        if !isDirectory.boolValue {
+            return [
+                try fileRecord(
+                    for: item,
+                    sourceURL: sourceURL,
+                    backupFileURL: backupURL,
+                    relativePath: ""
+                )
+            ]
+        }
+
+        guard let enumerator = fileManager.enumerator(
+            at: backupURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsPackageDescendants]
+        ) else {
+            return []
+        }
+
+        let rootPath = backupURL.standardizedFileURL.path
+        var records: [BackupManifestFile] = []
+        for case let childURL as URL in enumerator {
+            let values = try childURL.resourceValues(forKeys: [.isRegularFileKey])
+            guard values.isRegularFile == true else {
+                continue
+            }
+
+            let childPath = childURL.standardizedFileURL.path
+            guard childPath.hasPrefix(rootPath + "/") else {
+                continue
+            }
+
+            let relativePath = String(childPath.dropFirst(rootPath.count + 1))
+            records.append(try fileRecord(
+                for: item,
+                sourceURL: sourceURL.appendingRelativePath(relativePath),
+                backupFileURL: childURL,
+                relativePath: relativePath
+            ))
+        }
+
+        return records
+    }
+
+    private func fileRecord(
+        for item: BackupItem,
+        sourceURL: URL,
+        backupFileURL: URL,
+        relativePath: String
+    ) throws -> BackupManifestFile {
+        let values = try backupFileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let backupRelativePath = relativePath.isEmpty
+            ? item.destinationPath
+            : "\(item.destinationPath)/\(relativePath)"
+
+        return BackupManifestFile(
+            itemID: item.id,
+            itemDisplayName: item.displayName,
+            relativePath: relativePath,
+            backupRelativePath: backupRelativePath,
+            sourcePath: sourceURL.standardizedFileURL.path,
+            byteCount: UInt64(values.fileSize ?? 0),
+            sha256: try sha256(for: backupFileURL),
+            modifiedAt: values.contentModificationDate
+        )
+    }
+
+    private func manifestTombstones(
+        from settings: BackupSettings,
+        copiedFiles: [BackupManifestFile]
+    ) -> [SyncTombstone] {
+        let copiedPaths = Set(copiedFiles.map(\.backupRelativePath))
+
+        return settings.syncTombstones.values
+            .filter { !copiedPaths.contains($0.backupRelativePath) }
+            .sorted { first, second in
+                first.backupRelativePath.localizedStandardCompare(second.backupRelativePath) == .orderedAscending
+            }
+    }
+
+    private func sha256(for url: URL) throws -> String {
+        let digest = SHA256.hash(data: try Data(contentsOf: url))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }
 
