@@ -1,7 +1,7 @@
-# Codex Keep 0.1.41
+# Codex Keep 0.1.42
 
-Syncs nested repo-local settings files.
+Adds peer-sync diagnostics for repo-local files.
 
-- Finds `local_settings.py` and `fabfile_local.py` below the repo root.
-- Preserves each file's relative path when backing up local repo dev files.
-- Skips build, cache, Git, virtualenv, and dependency folders while scanning.
+- Logs each trusted peer manifest timestamp and planned sync counts.
+- Adds regression coverage for applying nested repo-local settings files.
+- Makes stale peer manifests easier to identify from the backup log.

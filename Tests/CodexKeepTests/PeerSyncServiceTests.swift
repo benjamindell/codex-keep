@@ -154,6 +154,43 @@ import Testing
     #expect(item.targetPath.hasSuffix("/Home/Repositories/example-app/.env"))
 }
 
+@Test func peerSyncAppliesNestedRepositoryDevFilesForMatchingLocalRepos() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    fixture.settings.syncRepositoryDevFiles = true
+    try fixture.writePeerRepositoryDevFile(
+        relativePath: "Git Repos/github.com/example/example-app/app/configs/common/local_settings.py",
+        fileRelativePath: "app/configs/common/local_settings.py",
+        content: "LOCAL = True"
+    )
+    try writeGitConfig(
+        in: fixture.home.appending(relativePath: "Repositories/example-app"),
+        originURL: "git@github.com:example/example-app.git",
+        fileManager: fixture.fileManager
+    )
+
+    let plans = try fixture.makePlans()
+    let item = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == "Git Repos/github.com/example/example-app/app/configs/common/local_settings.py"
+    })
+    #expect(item.status == .incomingNew)
+    #expect(item.targetPath.hasSuffix("/Home/Repositories/example-app/app/configs/common/local_settings.py"))
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: plans,
+        selectedItemIDs: [item.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.appliedItemCount == 1)
+    #expect(try String(
+        contentsOf: fixture.home.appending(relativePath: "Repositories/example-app/app/configs/common/local_settings.py"),
+        encoding: .utf8
+    ) == "LOCAL = True")
+}
+
 @Test func peerSyncSafetySnapshotToleratesDuplicateTargets() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
@@ -517,19 +554,22 @@ private final class PeerSyncFixture {
         )
     }
 
-    func writePeerRepositoryDevFile() throws {
-        let relativePath = "Git Repos/github.com/example/example-app/.env"
+    func writePeerRepositoryDevFile(
+        relativePath: String = "Git Repos/github.com/example/example-app/.env",
+        fileRelativePath: String = ".env",
+        content: String = "SECRET=peer"
+    ) throws {
         let url = peerLatest.appending(relativePath: relativePath)
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try "SECRET=peer".write(to: url, atomically: true, encoding: .utf8)
+        try content.write(to: url, atomically: true, encoding: .utf8)
 
         try writePeerManifest(extraFiles: [
             BackupManifestFile(
                 itemID: "git-repo-dev-github.com-example-example-app",
                 itemDisplayName: "Local repo dev files: example-app",
-                relativePath: ".env",
+                relativePath: fileRelativePath,
                 backupRelativePath: relativePath,
-                sourcePath: "/peer/Repositories/example-app/.env",
+                sourcePath: "/peer/Repositories/example-app/\(fileRelativePath)",
                 byteCount: UInt64((try Data(contentsOf: url)).count),
                 sha256: try fileSHA256(url),
                 modifiedAt: Date(timeIntervalSince1970: 0)

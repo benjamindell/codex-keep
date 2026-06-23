@@ -1227,6 +1227,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 settings: workingSettings,
                 localManifest: backupResult.manifest
             )
+            for plan in plans {
+                logBackupPhase(
+                    "Planned peer \(plan.peerName) manifest from \(Self.logTimestamp(plan.manifest.createdAt)): \(plan.incomingItemCount) automatic, \(plan.reviewItemCount) review"
+                )
+            }
             if plans.isEmpty {
                 logBackupPhase("No trusted peer manifests were ready for sync")
             }
@@ -1292,6 +1297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             try? line.write(to: url, atomically: true, encoding: .utf8)
         }
+    }
+
+    nonisolated private static func logTimestamp(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        return formatter.string(from: date)
     }
 
     nonisolated private static func backupRunLogURL() -> URL {
