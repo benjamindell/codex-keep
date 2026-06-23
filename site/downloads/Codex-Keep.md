@@ -1,7 +1,7 @@
-# Codex Keep 0.1.40
+# Codex Keep 0.1.41
 
-Keeps backups running when a peer manifest is temporarily unreadable.
+Syncs nested repo-local settings files.
 
-- Skips trusted-machine manifests that exist but cannot be decoded yet.
-- Prevents iCloud placeholder/corrupt peer manifests from failing the local backup.
-- Adds regression coverage for malformed peer manifests.
+- Finds `local_settings.py` and `fabfile_local.py` below the repo root.
+- Preserves each file's relative path when backing up local repo dev files.
+- Skips build, cache, Git, virtualenv, and dependency folders while scanning.

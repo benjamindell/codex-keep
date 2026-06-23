@@ -351,6 +351,7 @@ public final class BackupService {
             }
         }
 
+        stats.merge(try copyRepositoryNamedDevFiles(from: sourceURL, to: destinationURL))
         return stats
     }
 
@@ -373,6 +374,94 @@ public final class BackupService {
             ".env.template"
         ]
         return !excludedNames.contains(fileName.lowercased())
+    }
+
+    private func copyRepositoryNamedDevFiles(from sourceURL: URL, to destinationURL: URL) throws -> CopyStats {
+        let includedFileNames: Set<String> = [
+            "fabfile_local.py",
+            "local_settings.py"
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: sourceURL,
+            includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
+            options: [.skipsPackageDescendants]
+        ) else {
+            return CopyStats()
+        }
+
+        var stats = CopyStats()
+        let sourcePath = sourceURL.standardizedFileURL.path
+        for case let sourceChild as URL in enumerator {
+            let values = try sourceChild.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey
+            ])
+            let relativePath = relativePath(from: sourcePath, to: sourceChild.standardizedFileURL.path)
+
+            if values.isSymbolicLink == true {
+                if values.isDirectory == true {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+
+            if values.isDirectory == true {
+                if shouldSkipRepositoryDevDirectory(sourceChild.lastPathComponent) {
+                    enumerator.skipDescendants()
+                }
+                continue
+            }
+
+            guard values.isRegularFile == true,
+                  includedFileNames.contains(sourceChild.lastPathComponent),
+                  !BackupPathFilter.shouldExclude(relativePath: relativePath)
+            else {
+                continue
+            }
+
+            let destinationChild = destinationURL.appendingRelativePath(relativePath)
+            guard !fileManager.fileExists(atPath: destinationChild.path) else {
+                continue
+            }
+
+            try fileManager.createDirectory(
+                at: destinationChild.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try fileManager.copyItem(at: sourceChild, to: destinationChild)
+            stats.fileCount += 1
+            stats.byteCount += UInt64(values.fileSize ?? 0)
+        }
+
+        return stats
+    }
+
+    private func shouldSkipRepositoryDevDirectory(_ directoryName: String) -> Bool {
+        let excludedNames: Set<String> = [
+            ".build",
+            ".git",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".tox",
+            ".venv",
+            "__pycache__",
+            "build",
+            "dist",
+            "node_modules",
+            "venv"
+        ]
+        return excludedNames.contains(directoryName.lowercased())
+    }
+
+    private func relativePath(from rootPath: String, to childPath: String) -> String {
+        guard childPath.hasPrefix(rootPath + "/") else {
+            return URL(fileURLWithPath: childPath).lastPathComponent
+        }
+
+        return String(childPath.dropFirst(rootPath.count + 1))
     }
 
     private func copyDirectory(from sourceURL: URL, to destinationURL: URL, excluding excludedPaths: Set<String>) throws -> CopyStats {

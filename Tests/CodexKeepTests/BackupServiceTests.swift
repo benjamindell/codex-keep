@@ -54,11 +54,18 @@ import Testing
     try "example".write(to: repository.appendingPathComponent(".env.example"), atomically: true, encoding: .utf8)
     try "fab".write(to: repository.appendingPathComponent("fabfile_local.py"), atomically: true, encoding: .utf8)
     try "settings".write(to: repository.appendingPathComponent("local_settings.py"), atomically: true, encoding: .utf8)
+    try fileManager.createDirectory(at: repository.appending(relativePath: "app/configs/common"), withIntermediateDirectories: true)
+    try "nested settings".write(
+        to: repository.appending(relativePath: "app/configs/common/local_settings.py"),
+        atomically: true,
+        encoding: .utf8
+    )
     try fileManager.createDirectory(at: repository.appendingPathComponent(".vscode", isDirectory: true), withIntermediateDirectories: true)
     try "{}".write(to: repository.appending(relativePath: ".vscode/settings.json"), atomically: true, encoding: .utf8)
     try "tmp".write(to: repository.appending(relativePath: ".vscode/settings.json.tmp"), atomically: true, encoding: .utf8)
     try fileManager.createDirectory(at: repository.appendingPathComponent(".build", isDirectory: true), withIntermediateDirectories: true)
     try "nested".write(to: repository.appending(relativePath: ".build/.env"), atomically: true, encoding: .utf8)
+    try "build settings".write(to: repository.appending(relativePath: ".build/local_settings.py"), atomically: true, encoding: .utf8)
 
     let items = DefaultBackupItems.items(homeDirectory: root, fileManager: fileManager)
     let repoItem = try #require(items.first { $0.id == "git-repo-dev-github.com-example-example-app" })
@@ -91,14 +98,17 @@ import Testing
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env.local").path))
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/fabfile_local.py").path))
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/local_settings.py").path))
+    #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/app/configs/common/local_settings.py").path))
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.vscode/settings.json").path))
     #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env.example").path))
     #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.build/.env").path))
+    #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.build/local_settings.py").path))
     #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.vscode/settings.json.tmp").path))
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env.local" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/fabfile_local.py" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/local_settings.py" })
+    #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/app/configs/common/local_settings.py" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.vscode/settings.json" })
 }
 
