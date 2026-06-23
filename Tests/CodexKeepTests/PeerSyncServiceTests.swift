@@ -16,6 +16,7 @@ import Testing
     #expect(items["Codex/skills/conflict/SKILL.md"]?.status == .conflict)
     #expect(items["Codex/skills/local-only/SKILL.md"]?.status == .localChanged)
     #expect(items["Codex/skills/deleted/SKILL.md"]?.status == .peerDeletedReviewRequired)
+    #expect(items["Codex/config.toml"]?.status == .incomingChanged)
     #expect(items["Codex/skills/shared/.DS_Store"] == nil)
     #expect(items["Codex/skills/shared/memory.md.tmp"] == nil)
     #expect(items["Codex/automations/daily-report/automation.toml"] == nil)
@@ -46,10 +47,12 @@ import Testing
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/shared/README.md"), encoding: .utf8) == "peer readme")
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md"), encoding: .utf8) == "peer new")
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/conflict/SKILL.md"), encoding: .utf8) == "local conflict")
+    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/config.toml"), encoding: .utf8) == "model = \"peer\"")
     #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/deleted/SKILL.md").path))
     #expect(fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/conflict/SKILL.conflict-Peer-Mac-19700101-010000.md").path))
     #expect(fixture.fileManager.fileExists(atPath: result.safetySnapshotURL.appendingPathComponent("manifest.json").path))
     #expect(result.updatedSettings.syncStates["Codex/skills/shared/SKILL.md"]?.sha256 == sha256("peer update"))
+    #expect(result.updatedSettings.syncStates["Codex/config.toml"]?.sha256 == sha256("model = \"peer\""))
     #expect(result.updatedSettings.syncStates["Codex/skills/deleted/SKILL.md"]?.sha256 == nil)
     #expect(result.updatedSettings.syncTombstones["Codex/skills/deleted/SKILL.md"] != nil)
 }
@@ -186,20 +189,27 @@ private final class PeerSyncFixture {
         try writeLocalSkill("conflict", content: "local conflict")
         try writeLocalSkill("local-only", content: "local change")
         try writeLocalSkill("deleted", content: "delete me")
+        try writeLocalConfig(content: "model = \"base\"")
         try writePeerSkill("shared", content: "peer update")
         try writePeerFile("shared/README.md", content: "peer readme")
         try writePeerSkill("new", content: "peer new")
         try writePeerSkill("conflict", content: "peer conflict")
         try writePeerSkill("local-only", content: "base")
+        try writePeerConfig(content: "model = \"peer\"")
         try writePeerFile("shared/.DS_Store", content: "finder metadata")
         try writePeerFile("shared/memory.md.tmp", content: "temporary write")
         try writePeerAutomation("daily-report", content: "name = \"Daily\"")
 
         var initialSettings = BackupSettings(
             destinationRootPath: destination.path,
-            enabledItemIDs: ["codex-automations", "codex-skills"],
+            enabledItemIDs: ["codex-automations", "codex-config", "codex-skills"],
             trustedMachineNames: ["Peer-Mac"],
             syncStates: [
+                "Codex/config.toml": SyncFileState(
+                    sha256: sha256("model = \"base\""),
+                    updatedAt: Date(timeIntervalSince1970: 0),
+                    machineName: "Peer-Mac"
+                ),
                 "Codex/skills/shared/SKILL.md": SyncFileState(
                     sha256: sha256("local base"),
                     updatedAt: Date(timeIntervalSince1970: 0),
@@ -282,8 +292,20 @@ private final class PeerSyncFixture {
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    private func writeLocalConfig(content: String) throws {
+        let url = home.appending(relativePath: ".codex/config.toml")
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
     private func writePeerSkill(_ name: String, content: String) throws {
         let url = peerLatest.appending(relativePath: "Codex/skills/\(name)/SKILL.md")
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func writePeerConfig(content: String) throws {
+        let url = peerLatest.appending(relativePath: "Codex/config.toml")
         try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try content.write(to: url, atomically: true, encoding: .utf8)
     }
@@ -358,6 +380,17 @@ private final class PeerSyncFixture {
             sha256: try fileSHA256(automationURL),
             modifiedAt: Date(timeIntervalSince1970: 0)
         ))
+        let configURL = peerLatest.appending(relativePath: "Codex/config.toml")
+        files.append(BackupManifestFile(
+            itemID: "codex-config",
+            itemDisplayName: "Codex config",
+            relativePath: "",
+            backupRelativePath: "Codex/config.toml",
+            sourcePath: "/peer/.codex/config.toml",
+            byteCount: UInt64((try Data(contentsOf: configURL)).count),
+            sha256: try fileSHA256(configURL),
+            modifiedAt: Date(timeIntervalSince1970: 0)
+        ))
         files.append(contentsOf: extraFiles)
 
         let manifest = BackupManifest(
@@ -374,6 +407,16 @@ private final class PeerSyncFixture {
                     status: .copied,
                     fileCount: files.count,
                     byteCount: files.reduce(0) { $0 + $1.byteCount },
+                    message: nil
+                ),
+                BackupManifestItem(
+                    id: "codex-config",
+                    displayName: "Codex config",
+                    sourcePath: "/peer/.codex/config.toml",
+                    destinationPath: "/peer/latest/Codex/config.toml",
+                    status: .copied,
+                    fileCount: 1,
+                    byteCount: UInt64((try Data(contentsOf: configURL)).count),
                     message: nil
                 )
             ],
