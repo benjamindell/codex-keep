@@ -71,6 +71,12 @@ public struct PeerSyncPlanItem: Equatable, Identifiable, Sendable {
     public var needsReview: Bool {
         status == .conflict || status == .peerDeletedReviewRequired
     }
+
+    public var replacesLocalWhenReviewed: Bool {
+        status == .conflict
+            && peerSHA256 != nil
+            && backupRelativePath == "Codex/config.toml"
+    }
 }
 
 public struct PeerSyncApplyResult: Equatable, Sendable {
@@ -371,13 +377,24 @@ public final class PeerSyncService {
                             continue
                         }
 
-                        try copyConflictFile(
-                            from: sourceURL,
-                            beside: URL(fileURLWithPath: item.targetPath),
-                            peerName: plan.peerName,
-                            now: now
-                        )
-                        conflictCopyCount += 1
+                        if item.replacesLocalWhenReviewed {
+                            try replaceFile(from: sourceURL, to: URL(fileURLWithPath: item.targetPath))
+                            updatedSettings.syncStates[item.backupRelativePath] = SyncFileState(
+                                sha256: item.peerSHA256,
+                                updatedAt: now,
+                                machineName: plan.peerName
+                            )
+                            updatedSettings.syncTombstones.removeValue(forKey: item.backupRelativePath)
+                            appliedItemCount += 1
+                        } else {
+                            try copyConflictFile(
+                                from: sourceURL,
+                                beside: URL(fileURLWithPath: item.targetPath),
+                                peerName: plan.peerName,
+                                now: now
+                            )
+                            conflictCopyCount += 1
+                        }
                     case .peerDeletedReviewRequired:
                         let targetURL = URL(fileURLWithPath: item.targetPath)
                         if fileManager.fileExists(atPath: targetURL.path) {

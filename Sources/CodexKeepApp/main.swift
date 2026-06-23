@@ -1129,7 +1129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         case .incomingChanged:
             status = "changed on \(item.peerName)"
         case .conflict:
-            status = item.peerSHA256 == nil ? "delete conflict" : "conflict copy"
+            status = item.replacesLocalWhenReviewed ? "replace local after review" : item.peerSHA256 == nil ? "delete conflict" : "conflict copy"
         case .peerDeletedReviewRequired:
             status = "delete requested by \(item.peerName)"
         case .unchanged:

@@ -1,7 +1,7 @@
-# Codex Keep 0.1.34
+# Codex Keep 0.1.35
 
-Adds daily Codex app update supervision for secondary machines.
+Makes first-time Codex config sync review actually adopt the peer config.
 
-- Checks `/Applications/Codex.app` at 5:00 a.m. local time when Secondary Machine Mode is enabled.
-- Skips the update when Codex Keep is backing up, pulling repositories, or Codex appears to be running active work.
-- Adds menu actions to run the Codex app update check manually and open its log.
+- Reviewed `Codex/config.toml` conflicts now replace the local config after a safety snapshot.
+- Automatic sync still skips config conflicts until you review them.
+- The review dialog now labels this case as replacing the local config instead of saving a conflict copy.

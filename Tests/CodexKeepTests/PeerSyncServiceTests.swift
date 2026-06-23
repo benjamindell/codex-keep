@@ -57,6 +57,33 @@ import Testing
     #expect(result.updatedSettings.syncTombstones["Codex/skills/deleted/SKILL.md"] != nil)
 }
 
+@Test func reviewedConfigConflictReplacesLocalConfigAndRecordsSyncState() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    fixture.settings.syncStates.removeValue(forKey: "Codex/config.toml")
+
+    let plans = try fixture.makePlans()
+    let item = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == "Codex/config.toml"
+    })
+    #expect(item.status == .conflict)
+    #expect(item.replacesLocalWhenReviewed)
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: plans,
+        selectedItemIDs: [item.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.appliedItemCount == 1)
+    #expect(result.conflictCopyCount == 0)
+    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/config.toml"), encoding: .utf8) == "model = \"peer\"")
+    #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/config.conflict-Peer-Mac-19700101-010000.toml").path))
+    #expect(result.updatedSettings.syncStates["Codex/config.toml"]?.sha256 == sha256("model = \"peer\""))
+}
+
 @Test func peerSyncSkipsManifestFilesMissingAtApplyTime() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
