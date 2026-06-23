@@ -461,13 +461,17 @@ public final class PeerSyncService {
         try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
         try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
 
-        guard let manifestData = try? Data(contentsOf: manifestURL) else {
-            throw PeerSyncServiceError.missingPeerManifest(manifestURL.path)
+        if let manifestData = try? Data(contentsOf: manifestURL) {
+            return try decodeManifest(data: manifestData, manifestURL: manifestURL)
         }
 
+        return try readManifestFromPayloadArchive(at: sourceURL, manifestURL: manifestURL)
+    }
+
+    private func decodeManifest(data: Data, manifestURL: URL) throws -> BackupManifest {
         let manifest: BackupManifest
         do {
-            manifest = try decoder.decode(BackupManifest.self, from: manifestData)
+            manifest = try decoder.decode(BackupManifest.self, from: data)
         } catch {
             throw PeerSyncServiceError.unreadablePeerManifest(manifestURL.path, error.localizedDescription)
         }
@@ -476,6 +480,32 @@ public final class PeerSyncService {
         }
 
         return manifest
+    }
+
+    private func readManifestFromPayloadArchive(at sourceURL: URL, manifestURL: URL) throws -> BackupManifest {
+        let payloadURL = sourceURL.appendingPathComponent(PayloadArchive.fileName)
+        try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
+
+        guard fileManager.fileExists(atPath: payloadURL.path) else {
+            throw PeerSyncServiceError.missingPeerManifest(manifestURL.path)
+        }
+
+        let extractionURL = fileManager.temporaryDirectory
+            .appendingPathComponent("codex-keep-manifest-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? fileManager.removeItem(at: extractionURL)
+        }
+
+        do {
+            try PayloadArchive.extract(archiveURL: payloadURL, to: extractionURL)
+            let extractedManifestURL = extractionURL.appendingPathComponent("manifest.json")
+            let manifestData = try Data(contentsOf: extractedManifestURL)
+            return try decodeManifest(data: manifestData, manifestURL: manifestURL)
+        } catch let error as PeerSyncServiceError {
+            throw error
+        } catch {
+            throw PeerSyncServiceError.unreadablePeerManifest(manifestURL.path, error.localizedDescription)
+        }
     }
 
     private func hasPeerBackup(at machineURL: URL) -> Bool {

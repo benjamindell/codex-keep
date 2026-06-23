@@ -1,7 +1,7 @@
-# Codex Keep 0.1.43
+# Codex Keep 0.1.44
 
-Adds AWS credentials to local dev file sync.
+Falls back to peer payload archives when manifests are not hydrated.
 
-- Syncs `~/.aws/credentials` when local dev file sync is enabled.
-- Copies only the credentials file, not the full `~/.aws` folder.
-- Adds backup and peer-sync coverage for AWS credentials.
+- Reads `manifest.json` from `.codex-keep-payload.zip` when iCloud has not hydrated the visible manifest.
+- Allows trusted-machine sync planning to continue instead of reporting no ready peers.
+- Adds regression coverage for payload-only peer manifests.

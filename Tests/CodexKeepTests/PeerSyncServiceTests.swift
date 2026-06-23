@@ -219,6 +219,23 @@ import Testing
     ) == "[default]\naws_access_key_id=peer\n")
 }
 
+@Test func peerSyncPlansFromPayloadArchiveWhenManifestTreeIsNotHydrated() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    fixture.settings.syncRepositoryDevFiles = true
+    try fixture.writePeerAWSCredentials(content: "[default]\naws_access_key_id=peer\n")
+    try fixture.writePeerPayloadArchive()
+    try fixture.fileManager.removeItem(at: fixture.peerLatest.appendingPathComponent("manifest.json"))
+
+    let plans = try fixture.makePlans()
+    let item = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == "AWS/credentials"
+    })
+    #expect(item.status == .incomingNew)
+    #expect(item.targetPath.hasSuffix("/Home/.aws/credentials"))
+}
+
 @Test func peerSyncSafetySnapshotToleratesDuplicateTargets() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
