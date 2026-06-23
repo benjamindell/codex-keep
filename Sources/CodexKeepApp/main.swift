@@ -88,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var backupTimeoutTimer: Timer?
     private var trustedMachinesWindowController: NSWindowController?
     private var manageAutomationsWindowController: NSWindowController?
+    private var peerSyncReviewWindowController: NSWindowController?
     private var lastResult: BackupResult?
     private var lastPeerSyncResult: PeerSyncApplyResult?
     private var lastError: Error?
@@ -1038,38 +1039,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         let selectableItems = visibleItems.filter { isSelectablePeerSyncItem($0) }
 
-        let alert = NSAlert()
-        alert.messageText = visibleItems.isEmpty ? "No peer changes to sync" : "Sync peer changes?"
-        alert.informativeText = peerSyncPlanSummary(plans)
-        alert.alertStyle = plans.contains { $0.reviewItemCount > 0 } ? .warning : .informational
-
         if visibleItems.isEmpty {
+            let alert = NSAlert()
+            alert.messageText = "No peer changes to sync"
+            alert.informativeText = peerSyncPlanSummary(plans)
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return nil
         }
 
-        if selectableItems.isEmpty {
-            alert.messageText = "Peer changes need manual review"
-            alert.addButton(withTitle: "OK")
-            alert.accessoryView = peerSyncChecklistView(for: plans).view
-            alert.runModal()
+        activateCodexKeepForModalUI()
+
+        var selectedIDs: Set<String>?
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 520),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = selectableItems.isEmpty ? "Peer Changes Need Review" : "Sync Peer Changes"
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.contentView = NSHostingView(rootView: PeerSyncReviewView(
+            items: visibleItems,
+            incomingCount: plans.reduce(0) { $0 + $1.incomingItemCount },
+            reviewCount: plans.reduce(0) { $0 + $1.reviewItemCount },
+            localChangedCount: plans.flatMap(\.items).filter { $0.status == .localChanged }.count,
+            warnings: plans.flatMap(\.warnings),
+            onCancel: {
+                NSApp.stopModal()
+                window.close()
+            },
+            onSync: { ids in
+                selectedIDs = ids
+                NSApp.stopModal()
+                window.close()
+            }
+        ))
+
+        let controller = NSWindowController(window: window)
+        peerSyncReviewWindowController = controller
+        controller.showWindow(nil)
+        NSApp.runModal(for: window)
+        peerSyncReviewWindowController = nil
+
+        guard let selectedIDs else {
             return nil
         }
-
-        alert.addButton(withTitle: "Sync Selected")
-        alert.addButton(withTitle: "Cancel")
-
-        let checklist = peerSyncChecklistView(for: plans)
-        alert.accessoryView = checklist.view
-
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            return nil
-        }
-
-        let selectedIDs = Set(checklist.checkboxes.compactMap { id, checkbox in
-            checkbox.state == .on ? id : nil
-        })
 
         if selectedIDs.isEmpty {
             presentError(
@@ -1080,65 +1096,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         return selectedIDs
-    }
-
-    private func peerSyncChecklistView(for plans: [PeerSyncPlan]) -> (view: NSView, checkboxes: [(String, NSButton)]) {
-        let stackView = NSStackView()
-        stackView.orientation = .vertical
-        stackView.alignment = .leading
-        stackView.spacing = 6
-        stackView.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)
-
-        var checkboxes: [(String, NSButton)] = []
-
-        for plan in plans {
-            for item in plan.items {
-                switch item.status {
-                case .incomingNew, .incomingChanged, .conflict, .peerDeletedReviewRequired:
-                    let checkbox = NSButton(checkboxWithTitle: peerSyncCheckboxTitle(for: item), target: nil, action: nil)
-                    checkbox.state = item.isAutomatic ? .on : .off
-                    checkbox.isEnabled = isSelectablePeerSyncItem(item)
-                    checkbox.toolTip = item.targetPath
-                    checkbox.lineBreakMode = .byTruncatingMiddle
-                    checkbox.widthAnchor.constraint(lessThanOrEqualToConstant: 620).isActive = true
-                    checkboxes.append((item.id, checkbox))
-                    stackView.addArrangedSubview(checkbox)
-                case .unchanged, .localChanged:
-                    continue
-                }
-            }
-        }
-
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-        scrollView.documentView = stackView
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.widthAnchor.constraint(equalToConstant: 640).isActive = true
-        let checklistHeight = CGFloat(min(380, max(120, checkboxes.count * 26)))
-        scrollView.heightAnchor.constraint(equalToConstant: checklistHeight).isActive = true
-
-        return (scrollView, checkboxes)
-    }
-
-    private func peerSyncCheckboxTitle(for item: PeerSyncPlanItem) -> String {
-        let status: String
-        switch item.status {
-        case .incomingNew:
-            status = "new from \(item.peerName)"
-        case .incomingChanged:
-            status = "changed on \(item.peerName)"
-        case .conflict:
-            status = item.replacesLocalWhenReviewed ? "replace local after review" : item.peerSHA256 == nil ? "delete conflict" : "conflict copy"
-        case .peerDeletedReviewRequired:
-            status = "delete requested by \(item.peerName)"
-        case .unchanged:
-            status = "unchanged"
-        case .localChanged:
-            status = "local changed"
-        }
-
-        return "\(item.displayName) (\(status))"
     }
 
     private func isSelectablePeerSyncItem(_ item: PeerSyncPlanItem) -> Bool {
@@ -1459,6 +1416,188 @@ private struct BackupAndPeerSyncResult: Sendable {
     var backupResult: BackupResult
     var peerSyncResult: PeerSyncApplyResult?
     var updatedSettings: BackupSettings
+}
+
+private struct PeerSyncReviewView: View {
+    var items: [PeerSyncPlanItem]
+    var incomingCount: Int
+    var reviewCount: Int
+    var localChangedCount: Int
+    var warnings: [String]
+    var onCancel: () -> Void
+    var onSync: (Set<String>) -> Void
+
+    @State private var selectedItemIDs: Set<String>
+
+    init(
+        items: [PeerSyncPlanItem],
+        incomingCount: Int,
+        reviewCount: Int,
+        localChangedCount: Int,
+        warnings: [String],
+        onCancel: @escaping () -> Void,
+        onSync: @escaping (Set<String>) -> Void
+    ) {
+        self.items = items
+        self.incomingCount = incomingCount
+        self.reviewCount = reviewCount
+        self.localChangedCount = localChangedCount
+        self.warnings = warnings
+        self.onCancel = onCancel
+        self.onSync = onSync
+        self._selectedItemIDs = State(initialValue: Set(items.filter(\.isAutomatic).map(\.id)))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            header
+            peerItemList
+            footer
+        }
+        .padding(24)
+        .frame(minWidth: 680, maxWidth: 680, minHeight: 480, alignment: .topLeading)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Sync Peer Changes")
+                .font(.title2.weight(.semibold))
+
+            Text("\(incomingCount) non-conflicting peer files are selected by default. \(reviewCount) conflicts or deletions need review.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if localChangedCount > 0 {
+                Text("\(localChangedCount) files changed locally and will be left for the peer Mac to pull.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !warnings.isEmpty {
+                Text(warnings.joined(separator: " "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var peerItemList: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(items) { item in
+                    peerItemRow(item)
+
+                    if item.id != items.last?.id {
+                        Divider()
+                            .padding(.leading, 12)
+                    }
+                }
+            }
+        }
+        .frame(maxHeight: 320)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+    }
+
+    private func peerItemRow(_ item: PeerSyncPlanItem) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.displayName)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Text("\(item.backupRelativePath) - \(statusText(for: item))")
+                    .font(.caption)
+                    .foregroundStyle(item.replacesLocalWhenReviewed ? .primary : .secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+
+                Text("\(item.peerName), \(ByteCountFormatter.string(fromByteCount: Int64(item.byteCount), countStyle: .file))")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: binding(for: item))
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(!isSelectable(item))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Text("A sync safety snapshot is saved before local files are changed or deleted.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer()
+
+            Button("Cancel", action: onCancel)
+
+            Button("Sync Selected") {
+                onSync(selectedItemIDs)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(selectedItemIDs.isEmpty)
+        }
+    }
+
+    private func binding(for item: PeerSyncPlanItem) -> Binding<Bool> {
+        Binding(
+            get: {
+                selectedItemIDs.contains(item.id)
+            },
+            set: { isSelected in
+                if isSelected {
+                    selectedItemIDs.insert(item.id)
+                } else {
+                    selectedItemIDs.remove(item.id)
+                }
+            }
+        )
+    }
+
+    private func isSelectable(_ item: PeerSyncPlanItem) -> Bool {
+        switch item.status {
+        case .incomingNew, .incomingChanged, .peerDeletedReviewRequired:
+            true
+        case .conflict:
+            item.peerSHA256 != nil
+        case .unchanged, .localChanged:
+            false
+        }
+    }
+
+    private func statusText(for item: PeerSyncPlanItem) -> String {
+        switch item.status {
+        case .incomingNew:
+            "new from \(item.peerName)"
+        case .incomingChanged:
+            "changed on \(item.peerName)"
+        case .conflict:
+            item.replacesLocalWhenReviewed ? "replace local after review" : item.peerSHA256 == nil ? "delete conflict" : "save peer conflict copy"
+        case .peerDeletedReviewRequired:
+            "delete requested by \(item.peerName)"
+        case .unchanged:
+            "unchanged"
+        case .localChanged:
+            "local changed"
+        }
+    }
 }
 
 private struct TrustedMachinesView: View {

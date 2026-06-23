@@ -1,7 +1,7 @@
-# Codex Keep 0.1.36
+# Codex Keep 0.1.37
 
-Prevents missing peer manifests from failing a backup.
+Replaces the broken peer-review alert with a proper review window.
 
-- Skips trusted-machine peers whose `latest/manifest.json` is not ready yet.
-- Keeps the backup running when iCloud has not hydrated a peer manifest.
-- Logs when no trusted peer manifests were ready for sync.
+- Shows peer changes as clear rows with switches instead of a cramped alert.
+- Makes reviewed `Codex/config.toml` conflicts visible and selectable.
+- Removes the blank checklist panel that could hide review items.
