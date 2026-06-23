@@ -3,6 +3,7 @@ import Foundation
 
 public enum PeerSyncServiceError: LocalizedError, Equatable {
     case missingPeerManifest(String)
+    case unreadablePeerManifest(String, String)
     case unsupportedManifestVersion(Int)
     case noSelectedItems
     case unableToCreateSafetySnapshot(String)
@@ -12,6 +13,8 @@ public enum PeerSyncServiceError: LocalizedError, Equatable {
         switch self {
         case let .missingPeerManifest(path):
             "No Codex Keep manifest was found at \(path)."
+        case let .unreadablePeerManifest(path, reason):
+            "The Codex Keep manifest at \(path) could not be read: \(reason)"
         case let .unsupportedManifestVersion(version):
             "Codex Keep cannot sync schema version \(version)."
         case .noSelectedItems:
@@ -194,6 +197,8 @@ public final class PeerSyncService {
             do {
                 manifest = try readManifest(at: sourceURL)
             } catch PeerSyncServiceError.missingPeerManifest {
+                return nil
+            } catch PeerSyncServiceError.unreadablePeerManifest {
                 return nil
             }
             let syncablePeerFiles = manifest.files.filter { isSyncableBackupPath($0.backupRelativePath) }
@@ -460,7 +465,12 @@ public final class PeerSyncService {
             throw PeerSyncServiceError.missingPeerManifest(manifestURL.path)
         }
 
-        let manifest = try decoder.decode(BackupManifest.self, from: manifestData)
+        let manifest: BackupManifest
+        do {
+            manifest = try decoder.decode(BackupManifest.self, from: manifestData)
+        } catch {
+            throw PeerSyncServiceError.unreadablePeerManifest(manifestURL.path, error.localizedDescription)
+        }
         guard manifest.schemaVersion == 1 else {
             throw PeerSyncServiceError.unsupportedManifestVersion(manifest.schemaVersion)
         }

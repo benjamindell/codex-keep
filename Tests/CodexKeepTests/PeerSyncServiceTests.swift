@@ -231,6 +231,38 @@ import Testing
     #expect(plans.isEmpty)
 }
 
+@Test func peerSyncSkipsTrustedPeersWhoseManifestIsUnreadable() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let peerLatest = root.appending(relativePath: "Ben-s-MacBook-Pro/latest")
+    try fileManager.createDirectory(at: peerLatest, withIntermediateDirectories: true)
+    try "not json".write(to: peerLatest.appendingPathComponent("manifest.json"), atomically: true, encoding: .utf8)
+
+    let plans = try PeerSyncService(fileManager: fileManager).makePlans(
+        settings: BackupSettings(
+            destinationRootPath: root.path,
+            enabledItemIDs: ["codex-config"],
+            trustedMachineNames: ["Ben-s-MacBook-Pro"]
+        ),
+        localManifest: BackupManifest(
+            appName: "Codex Keep",
+            schemaVersion: 1,
+            createdAt: Date(timeIntervalSince1970: 0),
+            machineName: "Ben-s-Mac-Mini",
+            items: [],
+            files: [],
+            tombstones: [],
+            warnings: []
+        ),
+        homeDirectory: home
+    )
+
+    #expect(plans.isEmpty)
+}
+
 @Test func peerSyncSkipsGitInternalsFromOlderPeerManifests() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -1,7 +1,7 @@
-# Codex Keep 0.1.39
+# Codex Keep 0.1.40
 
-Cleans up peer review for Codex memory files.
+Keeps backups running when a peer manifest is temporarily unreadable.
 
-- Hides `.git` internals from backups and peer-review sync lists.
-- Filters older peer manifests that still contain memory Git metadata.
-- Ignores peer deletion tombstones for `Codex/config.toml`.
+- Skips trusted-machine manifests that exist but cannot be decoded yet.
+- Prevents iCloud placeholder/corrupt peer manifests from failing the local backup.
+- Adds regression coverage for malformed peer manifests.
