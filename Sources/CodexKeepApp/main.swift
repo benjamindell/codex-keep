@@ -41,6 +41,25 @@ private final class SparkleUserDriverDelegate: NSObject, SPUStandardUserDriverDe
     }
 }
 
+private extension CodexAppUpdateService.UpdateResult {
+    var logMessage: String {
+        switch self {
+        case .skippedNotSecondary:
+            "Codex app update skipped because Secondary Machine Mode is disabled."
+        case .skippedCodexMissing:
+            "Codex app update skipped because /Applications/Codex.app was not found."
+        case let .skippedCodexBusy(reasons):
+            "Codex app update skipped because Codex looks busy: \(reasons.joined(separator: " | "))"
+        case .skippedAlreadyRunning:
+            "Codex app update skipped because an update check is already running or already ran today."
+        case let .started(currentVersion, feedURL):
+            "Codex app update check started from version \(currentVersion) using \(feedURL)."
+        case let .failed(message):
+            "Codex app update failed to start: \(message)"
+        }
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settingsStore = SettingsStore()
@@ -48,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let deployService = DeployService()
     private let peerSyncService = PeerSyncService()
     private let automationMoveService = AutomationMoveService()
+    private let codexAppUpdateService = CodexAppUpdateService()
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -63,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private var timer: Timer?
     private var repositoryPullTimer: Timer?
+    private var codexAppUpdateTimer: Timer?
     private var animationTimer: Timer?
     private var backupTimeoutTimer: Timer?
     private var trustedMachinesWindowController: NSWindowController?
@@ -80,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let minimumSyncIndicatorDuration: TimeInterval = 1.25
     private let backupTimeoutDuration: TimeInterval = 180
     private let repositoryPullIntervalDuration: TimeInterval = 30 * 60
+    private let codexAppUpdateHour = 5
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -88,6 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         runBackup()
         scheduleTimer()
         scheduleRepositoryPullTimer()
+        scheduleCodexAppUpdateTimer()
     }
 
     private func configureStatusItem() {
@@ -129,6 +152,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private func scheduleCodexAppUpdateTimer(now: Date = Date()) {
+        codexAppUpdateTimer?.invalidate()
+        codexAppUpdateTimer = nil
+
+        guard settingsStore.settings.secondaryMachineMode else {
+            return
+        }
+
+        let fireDate = nextCodexAppUpdateDate(after: now)
+        let timer = Timer(
+            fireAt: fireDate,
+            interval: 0,
+            target: self,
+            selector: #selector(codexAppUpdateTimerFired),
+            userInfo: nil,
+            repeats: false
+        )
+        timer.tolerance = 15 * 60
+        RunLoop.main.add(timer, forMode: .common)
+        codexAppUpdateTimer = timer
+        Self.logCodexAppUpdateLine("Next daily Codex app update scheduled for \(fireDate)")
+    }
+
+    private func nextCodexAppUpdateDate(after date: Date, calendar: Calendar = .current) -> Date {
+        let today = calendar.date(
+            bySettingHour: codexAppUpdateHour,
+            minute: 0,
+            second: 0,
+            of: date
+        ) ?? date
+
+        if today > date {
+            return today
+        }
+
+        return calendar.date(byAdding: .day, value: 1, to: today) ?? date.addingTimeInterval(24 * 60 * 60)
+    }
+
     private func rebuildMenu() {
         let menu = NSMenu()
         menu.delegate = self
@@ -153,6 +214,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pullRepositoriesItem.isEnabled = !isPullingRepositories
         menu.addItem(pullRepositoriesItem)
         menu.addItem(actionItem(title: "Open Repository Pull Log", action: #selector(openRepositoryPullLog), keyEquivalent: "g"))
+        menu.addItem(actionItem(title: "Update Codex App Now", action: #selector(updateCodexAppNow), keyEquivalent: ""))
+        menu.addItem(actionItem(title: "Open Codex App Update Log", action: #selector(openCodexAppUpdateLog), keyEquivalent: ""))
         menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
         menu.addItem(.separator())
         menu.addItem(launchAtLoginItem())
@@ -267,6 +330,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openRepositoryPullLog() {
         NSWorkspace.shared.activateFileViewerSelecting([Self.repositoryPullLogURL()])
+    }
+
+    @objc private func openCodexAppUpdateLog() {
+        NSWorkspace.shared.activateFileViewerSelecting([Self.codexAppUpdateLogURL()])
     }
 
     @objc private func reviewPeerChanges() {
@@ -592,6 +659,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 isEnabling = settings.secondaryMachineMode
             }
             scheduleRepositoryPullTimer()
+            scheduleCodexAppUpdateTimer()
             if isEnabling {
                 runRepositoryPull()
             }
@@ -604,6 +672,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func pullRepositoriesNow() {
         runRepositoryPull()
+    }
+
+    @objc private func updateCodexAppNow() {
+        let result = runCodexAppUpdate(force: true)
+        switch result {
+        case .started:
+            break
+        case .skippedCodexBusy, .skippedCodexMissing, .failed:
+            presentCodexAppUpdateResult(result)
+        case .skippedNotSecondary, .skippedAlreadyRunning:
+            break
+        }
+        rebuildMenu()
+    }
+
+    @objc private func codexAppUpdateTimerFired() {
+        _ = runCodexAppUpdate(force: false)
+        scheduleCodexAppUpdateTimer()
+        rebuildMenu()
+    }
+
+    private func runCodexAppUpdate(force: Bool) -> CodexAppUpdateService.UpdateResult {
+        let result: CodexAppUpdateService.UpdateResult
+        if force {
+            result = codexAppUpdateService.runUpdate(
+                isBackingUp: isBackingUp,
+                isPullingRepositories: isPullingRepositories,
+                log: Self.logCodexAppUpdateLine
+            )
+        } else {
+            result = codexAppUpdateService.runDailyUpdateIfNeeded(
+                settings: settingsStore.settings,
+                isBackingUp: isBackingUp,
+                isPullingRepositories: isPullingRepositories,
+                log: Self.logCodexAppUpdateLine
+            )
+        }
+
+        Self.logCodexAppUpdateLine(result.logMessage)
+        return result
+    }
+
+    private func presentCodexAppUpdateResult(_ result: CodexAppUpdateService.UpdateResult) {
+        let alert = NSAlert()
+        alert.messageText = "Codex app update did not start"
+        alert.informativeText = result.logMessage
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open Update Log")
+
+        if alert.runModal() == .alertSecondButtonReturn {
+            NSWorkspace.shared.open(Self.codexAppUpdateLogURL())
+        }
     }
 
     @objc private func quit() {
@@ -1282,6 +1402,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .appendingPathComponent("Logs", isDirectory: true)
             .appendingPathComponent("Codex Keep", isDirectory: true)
             .appendingPathComponent("repository-pulls.log")
+    }
+
+    nonisolated private static func logCodexAppUpdateLine(_ message: String) {
+        let formatter = ISO8601DateFormatter()
+        let line = "\(formatter.string(from: Date())) \(message)\n"
+        let url = codexAppUpdateLogURL()
+        try? FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data(line.utf8))
+        } else {
+            try? line.write(to: url, atomically: true, encoding: .utf8)
+        }
+    }
+
+    nonisolated private static func codexAppUpdateLogURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library", isDirectory: true)
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("Codex Keep", isDirectory: true)
+            .appendingPathComponent("codex-app-updates.log")
     }
 
     nonisolated private static func appVersionDescription() -> String {

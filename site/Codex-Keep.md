@@ -1,7 +1,7 @@
-# Codex Keep 0.1.33
+# Codex Keep 0.1.34
 
-Makes automation moves more reliable when iCloud exposes package metadata before files.
+Adds daily Codex app update supervision for secondary machines.
 
-- Adds a payload archive to each automation move package.
-- Installs moved automations from the archive if the visible folder tree is not hydrated yet.
-- Logs whether pending automation moves were installed during backup.
+- Checks `/Applications/Codex.app` at 5:00 a.m. local time when Secondary Machine Mode is enabled.
+- Skips the update when Codex Keep is backing up, pulling repositories, or Codex appears to be running active work.
+- Adds menu actions to run the Codex app update check manually and open its log.

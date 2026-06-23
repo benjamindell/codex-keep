@@ -58,6 +58,15 @@ Each backup run writes phase diagnostics to `~/Library/Logs/Codex Keep/last-run.
 
 If a backup run takes longer than two minutes, Codex Keep stops the menu-bar spinner, reports the last logged phase, and leaves the diagnostic log available from `Open Diagnostic Log`.
 
+## Secondary Machine Mode
+
+Use `Secondary Machine Mode` on always-on Macs that should stay ready for remote Codex work.
+
+- Every 30 minutes, Codex Keep pulls clean Git repositories in `~/Repositories`.
+- Once per day at 5:00 a.m. local time, Codex Keep checks `/Applications/Codex.app` for a Sparkle update and installs it silently only if Codex does not appear to be running local work.
+- Codex app updates are skipped when Codex Keep is backing up or pulling repositories, or when Codex has active work processes such as `codex app-server --listen stdio://` or `kernel.js`.
+- Codex app update diagnostics are written to `~/Library/Logs/Codex Keep/codex-app-updates.log`.
+
 ## Development
 
 ```sh
