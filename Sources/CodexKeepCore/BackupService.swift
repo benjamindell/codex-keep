@@ -161,11 +161,25 @@ public final class BackupService {
     }
 
     private func publishBackupContents(to destinationURL: URL, from stagingURL: URL) throws {
+        let temporaryDestinationURL = destinationURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(".\(destinationURL.lastPathComponent)-publish-\(UUID().uuidString)", isDirectory: true)
+
         do {
-            try fileManager.createDirectory(at: destinationURL, withIntermediateDirectories: true)
-            try removeContents(of: destinationURL)
-            try copyContents(from: stagingURL, to: destinationURL)
+            try fileManager.createDirectory(
+                at: destinationURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(at: temporaryDestinationURL, withIntermediateDirectories: true)
+            try copyContents(from: stagingURL, to: temporaryDestinationURL)
+            if fileManager.fileExists(atPath: destinationURL.path) {
+                try fileManager.removeItem(at: destinationURL)
+            }
+            try fileManager.moveItem(at: temporaryDestinationURL, to: destinationURL)
         } catch {
+            if fileManager.fileExists(atPath: temporaryDestinationURL.path) {
+                try? fileManager.removeItem(at: temporaryDestinationURL)
+            }
             throw BackupServiceError.unableToPublishBackup(error.localizedDescription)
         }
     }
@@ -281,6 +295,11 @@ public final class BackupService {
         var isDirectory: ObjCBool = false
         fileManager.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory)
 
+        let sourceValues = try sourceURL.resourceValues(forKeys: [.isSymbolicLinkKey])
+        if sourceValues.isSymbolicLink == true {
+            return CopyStats()
+        }
+
         if item.syncsRepositoryDevFiles {
             return try copyRepositoryDevFiles(from: sourceURL, to: destinationURL)
         }
@@ -312,7 +331,16 @@ public final class BackupService {
         var stats = CopyStats()
         for sourceChild in contents where isRepositoryDevRootItem(sourceChild.lastPathComponent) {
             let destinationChild = destinationURL.appendingPathComponent(sourceChild.lastPathComponent)
-            let values = try sourceChild.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
+            let values = try sourceChild.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isRegularFileKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey
+            ])
+
+            guard values.isSymbolicLink != true else {
+                continue
+            }
 
             if values.isDirectory == true, sourceChild.lastPathComponent == ".vscode" {
                 stats.merge(try copyDirectory(from: sourceChild, to: destinationChild, excluding: []))
@@ -356,7 +384,7 @@ public final class BackupService {
         var stats = CopyStats()
         guard let enumerator = fileManager.enumerator(
             at: sourceURL,
-            includingPropertiesForKeys: [.isDirectoryKey, .fileSizeKey],
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey],
             options: []
         ) else {
             return stats
@@ -365,6 +393,16 @@ public final class BackupService {
         let canonicalSourcePath = sourceURL.resolvingSymlinksInPath().path
 
         for case let sourceChild as URL in enumerator {
+            let resourceValues = try sourceChild.resourceValues(forKeys: [
+                .isDirectoryKey,
+                .isSymbolicLinkKey,
+                .fileSizeKey
+            ])
+            if resourceValues.isSymbolicLink == true {
+                enumerator.skipDescendants()
+                continue
+            }
+
             let canonicalChildPath = sourceChild.resolvingSymlinksInPath().path
             guard canonicalChildPath.hasPrefix(canonicalSourcePath + "/") else {
                 continue
@@ -377,7 +415,6 @@ public final class BackupService {
             }
 
             let destinationChild = destinationURL.appendingRelativePath(relativePath)
-            let resourceValues = try sourceChild.resourceValues(forKeys: [.isDirectoryKey, .fileSizeKey])
 
             if resourceValues.isDirectory == true {
                 try fileManager.createDirectory(at: destinationChild, withIntermediateDirectories: true)

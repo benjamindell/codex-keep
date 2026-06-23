@@ -1,7 +1,7 @@
-# Codex Keep 0.1.37
+# Codex Keep 0.1.38
 
-Replaces the broken peer-review alert with a proper review window.
+Hardens config sync verification and backup publishing.
 
-- Shows peer changes as clear rows with switches instead of a cramped alert.
-- Makes reviewed `Codex/config.toml` conflicts visible and selectable.
-- Removes the blank checklist panel that could hide review items.
+- Verifies replaced peer files by hash before reporting sync success.
+- Publishes backups through a temporary folder so a failed copy does not expose an incomplete `latest`.
+- Skips symlinked local repo dev folders such as `.vscode` during backup.

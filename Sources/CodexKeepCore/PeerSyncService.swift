@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum PeerSyncServiceError: LocalizedError, Equatable {
@@ -363,6 +364,11 @@ public final class PeerSyncService {
                         }
 
                         try replaceFile(from: sourceURL, to: URL(fileURLWithPath: item.targetPath))
+                        try verifyReplacement(
+                            targetURL: URL(fileURLWithPath: item.targetPath),
+                            expectedSHA256: item.peerSHA256,
+                            backupRelativePath: item.backupRelativePath
+                        )
                         updatedSettings.syncStates[item.backupRelativePath] = SyncFileState(
                             sha256: item.peerSHA256,
                             updatedAt: now,
@@ -384,6 +390,11 @@ public final class PeerSyncService {
 
                         if item.replacesLocalWhenReviewed {
                             try replaceFile(from: sourceURL, to: URL(fileURLWithPath: item.targetPath))
+                            try verifyReplacement(
+                                targetURL: URL(fileURLWithPath: item.targetPath),
+                                expectedSHA256: item.peerSHA256,
+                                backupRelativePath: item.backupRelativePath
+                            )
                             updatedSettings.syncStates[item.backupRelativePath] = SyncFileState(
                                 sha256: item.peerSHA256,
                                 updatedAt: now,
@@ -761,6 +772,28 @@ public final class PeerSyncService {
             }
             throw error
         }
+    }
+
+    private func verifyReplacement(
+        targetURL: URL,
+        expectedSHA256: String?,
+        backupRelativePath: String
+    ) throws {
+        guard let expectedSHA256 else {
+            return
+        }
+
+        let actualSHA256 = try sha256(for: targetURL)
+        guard actualSHA256 == expectedSHA256 else {
+            throw PeerSyncServiceError.unableToSync(
+                "\(backupRelativePath) was copied but did not match the peer file hash afterward."
+            )
+        }
+    }
+
+    private func sha256(for url: URL) throws -> String {
+        let digest = SHA256.hash(data: try Data(contentsOf: url))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     private func copyReplacingDestination(from sourceURL: URL, to destinationURL: URL) throws {

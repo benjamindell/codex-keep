@@ -102,6 +102,43 @@ import Testing
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.vscode/settings.json" })
 }
 
+@Test func repositoryDevFilesSkipSymlinkedLocalFolders() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let repository = root.appending(relativePath: "Repositories/example-app")
+    let destination = root.appendingPathComponent("Backup", isDirectory: true)
+    let sharedVSCode = root.appending(relativePath: "SharedVSCode")
+    try writeGitConfig(
+        in: repository,
+        originURL: "git@github.com:example/example-app.git",
+        fileManager: fileManager
+    )
+    try fileManager.createDirectory(at: sharedVSCode, withIntermediateDirectories: true)
+    try "{}".write(to: sharedVSCode.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
+    try fileManager.createSymbolicLink(
+        at: repository.appendingPathComponent(".vscode"),
+        withDestinationURL: sharedVSCode
+    )
+    try "SECRET=1".write(to: repository.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
+
+    let items = DefaultBackupItems.items(homeDirectory: root, fileManager: fileManager)
+    let result = try BackupService(fileManager: fileManager).runBackup(
+        settings: BackupSettings(
+            destinationRootPath: destination.path,
+            enabledItemIDs: Set(items.filter(\.defaultEnabled).map(\.id)),
+            syncRepositoryDevFiles: true
+        ),
+        items: items,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env" })
+    #expect(!result.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.vscode/settings.json" })
+    #expect(!fileManager.fileExists(atPath: result.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.vscode/settings.json").path))
+}
+
 @Test func backupCopiesOnlyEnabledItemsAndRespectsExclusions() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
