@@ -300,7 +300,7 @@ public final class BackupService {
             return CopyStats()
         }
 
-        if item.syncsRepositoryDevFiles {
+        if item.syncsRepositoryDevFiles, isDirectory.boolValue {
             return try copyRepositoryDevFiles(from: sourceURL, to: destinationURL)
         }
 

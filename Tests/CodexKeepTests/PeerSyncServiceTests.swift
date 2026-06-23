@@ -191,6 +191,34 @@ import Testing
     ) == "LOCAL = True")
 }
 
+@Test func peerSyncAppliesAwsCredentialsWhenLocalDevFilesAreEnabled() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    fixture.settings.syncRepositoryDevFiles = true
+    try fixture.writePeerAWSCredentials(content: "[default]\naws_access_key_id=peer\n")
+
+    let plans = try fixture.makePlans()
+    let item = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == "AWS/credentials"
+    })
+    #expect(item.status == .incomingNew)
+    #expect(item.targetPath.hasSuffix("/Home/.aws/credentials"))
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: plans,
+        selectedItemIDs: [item.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.appliedItemCount == 1)
+    #expect(try String(
+        contentsOf: fixture.home.appending(relativePath: ".aws/credentials"),
+        encoding: .utf8
+    ) == "[default]\naws_access_key_id=peer\n")
+}
+
 @Test func peerSyncSafetySnapshotToleratesDuplicateTargets() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
@@ -570,6 +598,26 @@ private final class PeerSyncFixture {
                 relativePath: fileRelativePath,
                 backupRelativePath: relativePath,
                 sourcePath: "/peer/Repositories/example-app/\(fileRelativePath)",
+                byteCount: UInt64((try Data(contentsOf: url)).count),
+                sha256: try fileSHA256(url),
+                modifiedAt: Date(timeIntervalSince1970: 0)
+            )
+        ])
+    }
+
+    func writePeerAWSCredentials(content: String) throws {
+        let relativePath = "AWS/credentials"
+        let url = peerLatest.appending(relativePath: relativePath)
+        try fileManager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: url, atomically: true, encoding: .utf8)
+
+        try writePeerManifest(extraFiles: [
+            BackupManifestFile(
+                itemID: "aws-credentials",
+                itemDisplayName: "AWS credentials",
+                relativePath: "",
+                backupRelativePath: relativePath,
+                sourcePath: "/peer/.aws/credentials",
                 byteCount: UInt64((try Data(contentsOf: url)).count),
                 sha256: try fileSHA256(url),
                 modifiedAt: Date(timeIntervalSince1970: 0)

@@ -30,6 +30,7 @@ import Testing
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/AGENTS.md") })
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/config.toml") })
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/social-presence") })
+    #expect(itemPaths.contains { $0.hasSuffix("/.aws/credentials") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/cache") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/auth.json") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/sessions") })
@@ -43,12 +44,15 @@ import Testing
     defer { try? fileManager.removeItem(at: root) }
 
     let repository = root.appending(relativePath: "Repositories/example-app")
+    let awsCredentials = root.appending(relativePath: ".aws/credentials")
     let destination = root.appendingPathComponent("Backup", isDirectory: true)
     try writeGitConfig(
         in: repository,
         originURL: "git@github.com:example/example-app.git",
         fileManager: fileManager
     )
+    try fileManager.createDirectory(at: awsCredentials.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "[default]\naws_access_key_id=test\n".write(to: awsCredentials, atomically: true, encoding: .utf8)
     try "secret".write(to: repository.appendingPathComponent(".env"), atomically: true, encoding: .utf8)
     try "local".write(to: repository.appendingPathComponent(".env.local"), atomically: true, encoding: .utf8)
     try "example".write(to: repository.appendingPathComponent(".env.example"), atomically: true, encoding: .utf8)
@@ -82,6 +86,7 @@ import Testing
         now: Date(timeIntervalSince1970: 0)
     )
     #expect(!disabledResult.manifest.files.contains { $0.backupRelativePath.contains("Git Repos/") })
+    #expect(!disabledResult.manifest.files.contains { $0.backupRelativePath == "AWS/credentials" })
 
     let enabledSettings = BackupSettings(
         destinationRootPath: destination.path,
@@ -95,6 +100,7 @@ import Testing
     )
 
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env").path))
+    #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "AWS/credentials").path))
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.env.local").path))
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/fabfile_local.py").path))
     #expect(fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/local_settings.py").path))
@@ -105,6 +111,7 @@ import Testing
     #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.build/local_settings.py").path))
     #expect(!fileManager.fileExists(atPath: enabledResult.latestURL.appending(relativePath: "Git Repos/github.com/example/example-app/.vscode/settings.json.tmp").path))
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env" })
+    #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "AWS/credentials" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/.env.local" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/fabfile_local.py" })
     #expect(enabledResult.manifest.files.contains { $0.backupRelativePath == "Git Repos/github.com/example/example-app/local_settings.py" })

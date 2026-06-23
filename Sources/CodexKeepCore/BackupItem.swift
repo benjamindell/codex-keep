@@ -89,6 +89,14 @@ public enum DefaultBackupItems {
                 displayName: "Agent skills",
                 sourcePath: "\(agentsHome)/skills",
                 destinationPath: "Agents/skills"
+            ),
+            BackupItem(
+                id: "aws-credentials",
+                displayName: "AWS credentials",
+                sourcePath: "\(homeDirectory.path)/.aws/credentials",
+                destinationPath: "AWS/credentials",
+                defaultEnabled: false,
+                syncsRepositoryDevFiles: true
             )
         ]
 

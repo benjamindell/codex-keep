@@ -617,7 +617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !settingsStore.settings.syncRepositoryDevFiles {
             let alert = NSAlert()
             alert.messageText = "Sync local repo dev files?"
-            alert.informativeText = "Codex Keep will back up and sync root .env files for Git repositories that exist on both trusted Macs. Repositories that do not exist locally on another Mac are skipped."
+            alert.informativeText = "Codex Keep will back up and sync selected local development files, including repo .env files, local settings files, .vscode settings, and ~/.aws/credentials. Repository files only sync when the same repo exists on both trusted Macs."
             alert.alertStyle = .warning
             alert.addButton(withTitle: "Enable")
             alert.addButton(withTitle: "Cancel")
