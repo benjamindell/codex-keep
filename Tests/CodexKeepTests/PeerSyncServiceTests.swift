@@ -231,6 +231,164 @@ import Testing
     #expect(plans.isEmpty)
 }
 
+@Test func peerSyncSkipsGitInternalsFromOlderPeerManifests() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let peerLatest = root.appending(relativePath: "Ben-s-MacBook-Pro/latest")
+    try fileManager.createDirectory(at: peerLatest, withIntermediateDirectories: true)
+    let manifest = BackupManifest(
+        appName: "Codex Keep",
+        schemaVersion: 1,
+        createdAt: Date(timeIntervalSince1970: 0),
+        machineName: "Ben-s-MacBook-Pro",
+        items: [],
+        files: [
+            BackupManifestFile(
+                itemID: "codex-markdown-memories",
+                itemDisplayName: "Codex memories",
+                relativePath: ".git/index",
+                backupRelativePath: "Codex/memories/.git/index",
+                sourcePath: "/peer/.codex/memories/.git/index",
+                byteCount: 4,
+                sha256: sha256("git\n"),
+                modifiedAt: Date(timeIntervalSince1970: 0)
+            ),
+            BackupManifestFile(
+                itemID: "codex-markdown-memories",
+                itemDisplayName: "Codex memories",
+                relativePath: "memory_summary.md",
+                backupRelativePath: "Codex/memories/memory_summary.md",
+                sourcePath: "/peer/.codex/memories/memory_summary.md",
+                byteCount: 7,
+                sha256: sha256("summary"),
+                modifiedAt: Date(timeIntervalSince1970: 0)
+            )
+        ],
+        tombstones: [],
+        warnings: []
+    )
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(manifest).write(to: peerLatest.appendingPathComponent("manifest.json"), options: .atomic)
+
+    let plans = try PeerSyncService(fileManager: fileManager).makePlans(
+        settings: BackupSettings(
+            destinationRootPath: root.path,
+            enabledItemIDs: ["codex-markdown-memories"],
+            trustedMachineNames: ["Ben-s-MacBook-Pro"]
+        ),
+        localManifest: BackupManifest(
+            appName: "Codex Keep",
+            schemaVersion: 1,
+            createdAt: Date(timeIntervalSince1970: 0),
+            machineName: "Ben-s-Mac-Mini",
+            items: [],
+            files: [],
+            tombstones: [],
+            warnings: []
+        ),
+        homeDirectory: home,
+        items: [
+            BackupItem(
+                id: "codex-markdown-memories",
+                displayName: "Codex memories",
+                sourcePath: home.appending(relativePath: ".codex/memories").path,
+                destinationPath: "Codex/memories"
+            )
+        ]
+    )
+
+    let items = Dictionary(uniqueKeysWithValues: plans.flatMap(\.items).map { ($0.backupRelativePath, $0) })
+    #expect(items["Codex/memories/.git/index"] == nil)
+    #expect(items["Codex/memories/memory_summary.md"]?.status == .incomingNew)
+}
+
+@Test func peerSyncIgnoresConfigDeletionTombstones() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let configURL = home.appending(relativePath: ".codex/config.toml")
+    let peerLatest = root.appending(relativePath: "Ben-s-MacBook-Pro/latest")
+    try fileManager.createDirectory(at: configURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: peerLatest, withIntermediateDirectories: true)
+    try "model = \"local\"".write(to: configURL, atomically: true, encoding: .utf8)
+
+    let manifest = BackupManifest(
+        appName: "Codex Keep",
+        schemaVersion: 1,
+        createdAt: Date(timeIntervalSince1970: 0),
+        machineName: "Ben-s-MacBook-Pro",
+        items: [],
+        files: [],
+        tombstones: [
+            SyncTombstone(
+                backupRelativePath: "Codex/config.toml",
+                deletedAt: Date(timeIntervalSince1970: 1),
+                machineName: "Ben-s-MacBook-Pro"
+            )
+        ],
+        warnings: []
+    )
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(manifest).write(to: peerLatest.appendingPathComponent("manifest.json"), options: .atomic)
+
+    let localConfigFile = BackupManifestFile(
+        itemID: "codex-config",
+        itemDisplayName: "Codex config",
+        relativePath: "",
+        backupRelativePath: "Codex/config.toml",
+        sourcePath: configURL.path,
+        byteCount: UInt64((try Data(contentsOf: configURL)).count),
+        sha256: try fileSHA256(configURL),
+        modifiedAt: Date(timeIntervalSince1970: 0)
+    )
+
+    let plans = try PeerSyncService(fileManager: fileManager).makePlans(
+        settings: BackupSettings(
+            destinationRootPath: root.path,
+            enabledItemIDs: ["codex-config"],
+            trustedMachineNames: ["Ben-s-MacBook-Pro"],
+            syncStates: [
+                "Codex/config.toml": SyncFileState(
+                    sha256: localConfigFile.sha256,
+                    updatedAt: Date(timeIntervalSince1970: 0),
+                    machineName: "Ben-s-MacBook-Pro"
+                )
+            ]
+        ),
+        localManifest: BackupManifest(
+            appName: "Codex Keep",
+            schemaVersion: 1,
+            createdAt: Date(timeIntervalSince1970: 0),
+            machineName: "Ben-s-Mac-Mini",
+            items: [],
+            files: [localConfigFile],
+            tombstones: [],
+            warnings: []
+        ),
+        homeDirectory: home,
+        items: [
+            BackupItem(
+                id: "codex-config",
+                displayName: "Codex config",
+                sourcePath: configURL.path,
+                destinationPath: "Codex/config.toml"
+            )
+        ]
+    )
+
+    #expect(plans.flatMap(\.items).isEmpty)
+}
+
 private final class PeerSyncFixture {
     let fileManager = FileManager.default
     let root: URL

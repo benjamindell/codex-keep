@@ -1,7 +1,7 @@
-# Codex Keep 0.1.38
+# Codex Keep 0.1.39
 
-Hardens config sync verification and backup publishing.
+Cleans up peer review for Codex memory files.
 
-- Verifies replaced peer files by hash before reporting sync success.
-- Publishes backups through a temporary folder so a failed copy does not expose an incomplete `latest`.
-- Skips symlinked local repo dev folders such as `.vscode` during backup.
+- Hides `.git` internals from backups and peer-review sync lists.
+- Filters older peer manifests that still contain memory Git metadata.
+- Ignores peer deletion tombstones for `Codex/config.toml`.

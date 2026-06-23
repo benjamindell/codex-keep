@@ -235,7 +235,9 @@ public final class PeerSyncService {
             }
 
             for tombstone in peerTombstones.values where peerFiles[tombstone.backupRelativePath] == nil {
-                guard isSyncableBackupPath(tombstone.backupRelativePath) else {
+                guard isSyncableBackupPath(tombstone.backupRelativePath),
+                      shouldSyncPeerDeletion(backupRelativePath: tombstone.backupRelativePath)
+                else {
                     continue
                 }
 
@@ -514,6 +516,10 @@ public final class PeerSyncService {
 
     private func shouldReviewPeerDeletion(syncedState: SyncFileState?) -> Bool {
         syncedState?.sha256 != nil
+    }
+
+    private func shouldSyncPeerDeletion(backupRelativePath: String) -> Bool {
+        backupRelativePath != "Codex/config.toml"
     }
 
     private func isSyncableBackupPath(_ backupRelativePath: String) -> Bool {

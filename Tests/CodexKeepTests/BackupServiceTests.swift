@@ -149,6 +149,7 @@ import Testing
     let automations = codexHome.appendingPathComponent("automations", isDirectory: true)
     let skills = codexHome.appendingPathComponent("skills", isDirectory: true)
     let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
+    let memoriesGit = codexHome.appending(relativePath: "memories/.git")
     let systemSkill = skills.appendingPathComponent(".system", isDirectory: true)
     let customSkill = skills.appendingPathComponent("custom-skill", isDirectory: true)
     let customSkillNodeModules = customSkill.appendingPathComponent("node_modules/playwright-core", isDirectory: true)
@@ -157,6 +158,7 @@ import Testing
 
     try fileManager.createDirectory(at: automations, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: memoriesGit, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: systemSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: customSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: customSkillNodeModules, withIntermediateDirectories: true)
@@ -174,6 +176,16 @@ import Testing
     )
     try "keep".write(
         to: socialPresence.appendingPathComponent("social-log.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "summary".write(
+        to: codexHome.appending(relativePath: "memories/memory_summary.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "git index".write(
+        to: memoriesGit.appendingPathComponent("index"),
         atomically: true,
         encoding: .utf8
     )
@@ -210,7 +222,13 @@ import Testing
 
     let settings = BackupSettings(
         destinationRootPath: destination.path,
-        enabledItemIDs: ["codex-automations", "codex-skills", "agent-skills", "codex-markdown-social-presence"]
+        enabledItemIDs: [
+            "codex-automations",
+            "codex-skills",
+            "agent-skills",
+            "codex-markdown-social-presence",
+            "codex-markdown-memories"
+        ]
     )
 
     let result = try BackupService(fileManager: fileManager).runBackup(
@@ -226,6 +244,8 @@ import Testing
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/automation.toml").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/.run-jitter-salt").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/social-presence/social-log.md").path))
+    #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/memories/memory_summary.md").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/memories/.git/index").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/.DS_Store").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/memory.md.tmp").path))
@@ -239,6 +259,7 @@ import Testing
     #expect(fileManager.fileExists(atPath: snapshot.appendingPathComponent(PayloadArchive.fileName).path))
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".DS_Store") })
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".tmp") })
+    #expect(!result.manifest.files.contains { $0.backupRelativePath.contains("/.git/") })
 
     let extractedArchive = root.appendingPathComponent("Extracted", isDirectory: true)
     try PayloadArchive.extract(

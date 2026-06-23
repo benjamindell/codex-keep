@@ -3,7 +3,8 @@ import Foundation
 enum BackupPathFilter {
     static func shouldExclude(relativePath: String) -> Bool {
         relativePath.split(separator: "/").contains { component in
-            component == ".DS_Store"
+            component == ".git"
+                || component == ".DS_Store"
                 || component.hasSuffix(".tmp")
                 || component.hasSuffix(".swp")
                 || component.hasSuffix(".swpx")
