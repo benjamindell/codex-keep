@@ -1,7 +1,7 @@
-# Codex Keep 0.1.35
+# Codex Keep 0.1.36
 
-Makes first-time Codex config sync review actually adopt the peer config.
+Prevents missing peer manifests from failing a backup.
 
-- Reviewed `Codex/config.toml` conflicts now replace the local config after a safety snapshot.
-- Automatic sync still skips config conflicts until you review them.
-- The review dialog now labels this case as replacing the local config instead of saving a conflict copy.
+- Skips trusted-machine peers whose `latest/manifest.json` is not ready yet.
+- Keeps the backup running when iCloud has not hydrated a peer manifest.
+- Logs when no trusted peer manifests were ready for sync.

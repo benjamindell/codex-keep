@@ -197,6 +197,40 @@ import Testing
     #expect(PeerSyncService(fileManager: fileManager).availablePeerMachineNames(settings: settings) == ["Ben-s-Mac-Mini"])
 }
 
+@Test func peerSyncSkipsTrustedPeersWhoseManifestIsNotReady() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let peerLatest = root.appending(relativePath: "Ben-s-MacBook-Pro/latest")
+    try fileManager.createDirectory(at: peerLatest, withIntermediateDirectories: true)
+
+    let settings = BackupSettings(
+        destinationRootPath: root.path,
+        enabledItemIDs: ["codex-config"],
+        trustedMachineNames: ["Ben-s-MacBook-Pro"]
+    )
+    let localManifest = BackupManifest(
+        appName: "Codex Keep",
+        schemaVersion: 1,
+        createdAt: Date(timeIntervalSince1970: 0),
+        machineName: "Ben-s-Mac-Mini",
+        items: [],
+        files: [],
+        tombstones: [],
+        warnings: []
+    )
+
+    let plans = try PeerSyncService(fileManager: fileManager).makePlans(
+        settings: settings,
+        localManifest: localManifest,
+        homeDirectory: home
+    )
+
+    #expect(plans.isEmpty)
+}
+
 private final class PeerSyncFixture {
     let fileManager = FileManager.default
     let root: URL

@@ -1270,6 +1270,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 settings: workingSettings,
                 localManifest: backupResult.manifest
             )
+            if plans.isEmpty {
+                logBackupPhase("No trusted peer manifests were ready for sync")
+            }
             workingSettings = peerSyncService.settingsByRecordingUnchangedPeerFiles(
                 workingSettings,
                 plans: plans

@@ -184,12 +184,17 @@ public final class PeerSyncService {
         let enabledItems = restoreItems.filter { settings.isEnabled($0) }
         let localFiles = Dictionary(uniqueKeysWithValues: localManifest.files.map { ($0.backupRelativePath, $0) })
 
-        return try peerNames.map { peerName in
+        return try peerNames.compactMap { peerName in
             let sourceURL = URL(fileURLWithPath: settings.destinationRootPath)
                 .standardizedFileURL
                 .appendingPathComponent(peerName, isDirectory: true)
                 .appendingPathComponent("latest", isDirectory: true)
-            let manifest = try readManifest(at: sourceURL)
+            let manifest: BackupManifest
+            do {
+                manifest = try readManifest(at: sourceURL)
+            } catch PeerSyncServiceError.missingPeerManifest {
+                return nil
+            }
             let syncablePeerFiles = manifest.files.filter { isSyncableBackupPath($0.backupRelativePath) }
             let peerFiles = Dictionary(uniqueKeysWithValues: syncablePeerFiles.map { ($0.backupRelativePath, $0) })
             let peerTombstones = Dictionary(uniqueKeysWithValues: manifest.tombstones.map { ($0.backupRelativePath, $0) })
