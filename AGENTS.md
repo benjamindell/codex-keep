@@ -1,3 +1,8 @@
+## Project Context
+
+- Codex Keep is Benjamin's personal project and is not used by other customers or external users.
+- When a useful change is complete and verified, it is OK to commit, push, and update the Sparkle release artifacts without asking for separate confirmation, unless Benjamin explicitly says not to.
+
 ## Release Notes
 
 - Sparkle release notes must describe only the current release.

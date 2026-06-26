@@ -1,7 +1,7 @@
-# Codex Keep 0.1.44
+# Codex Keep 0.1.45
 
-Falls back to peer payload archives when manifests are not hydrated.
+Keeps secondary-machine repositories moving when automations only changed safe state files.
 
-- Reads `manifest.json` from `.codex-keep-payload.zip` when iCloud has not hydrated the visible manifest.
-- Allows trusted-machine sync planning to continue instead of reporting no ready peers.
-- Adds regression coverage for payload-only peer manifests.
+- Commits generated `.md`, `.yml`, `.yaml`, `.csv`, `.xls`, and `.xlsx` artifacts before pulling.
+- Pushes the generated-artifact commit after upstream updates are safely integrated.
+- Still skips repositories with code changes, missing upstreams, conflicts, or existing local commits that would be pushed.

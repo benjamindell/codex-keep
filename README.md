@@ -63,7 +63,9 @@ If a backup run takes longer than two minutes, Codex Keep stops the menu-bar spi
 
 Use `Secondary Machine Mode` on always-on Macs that should stay ready for remote Codex work.
 
-- Every 30 minutes, Codex Keep pulls clean Git repositories in `~/Repositories`.
+- Every 30 minutes, Codex Keep updates Git repositories in `~/Repositories`.
+- If a repository only has generated artifact changes with `.md`, `.yml`, `.yaml`, `.csv`, `.xls`, or `.xlsx` extensions, Codex Keep commits those changes before integrating upstream updates and pushes once the branch is safe to push.
+- Repositories with other local changes, missing upstreams, or merge conflicts are skipped and logged.
 - Once per day at 5:00 a.m. local time, Codex Keep checks `/Applications/Codex.app` for a Sparkle update and installs it silently only if Codex does not appear to be running local work.
 - Codex app updates are skipped when Codex Keep is backing up or pulling repositories, or when Codex has active work processes such as `codex app-server --listen stdio://` or `kernel.js`.
 - Codex app update diagnostics are written to `~/Library/Logs/Codex Keep/codex-app-updates.log`.

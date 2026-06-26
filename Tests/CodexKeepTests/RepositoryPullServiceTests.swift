@@ -26,7 +26,7 @@ struct RepositoryPullServiceTests {
     let fixture = try RepositoryPullFixture()
     defer { fixture.cleanup() }
 
-    try "local change\n".write(to: fixture.secondary.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+    try "local change\n".write(to: fixture.secondary.appendingPathComponent("worker.swift"), atomically: true, encoding: .utf8)
     try fixture.writePrimaryFile("REMOTE.md", "remote\n")
     try fixture.git(["add", "REMOTE.md"], in: fixture.primary)
     try fixture.git(["commit", "-m", "remote"], in: fixture.primary)
@@ -39,7 +39,83 @@ struct RepositoryPullServiceTests {
 
     #expect(result.results.map(\.status) == [.skippedDirty])
     #expect(!fixture.fileManager.fileExists(atPath: fixture.secondary.appendingPathComponent("REMOTE.md").path))
-    #expect(try String(contentsOf: fixture.secondary.appendingPathComponent("README.md"), encoding: .utf8) == "local change\n")
+    #expect(try String(contentsOf: fixture.secondary.appendingPathComponent("worker.swift"), encoding: .utf8) == "local change\n")
+}
+
+@Test func repositoryPullCommitsAndPushesSafeGeneratedArtifacts() throws {
+    let fixture = try RepositoryPullFixture()
+    defer { fixture.cleanup() }
+
+    try "state\n".write(to: fixture.secondary.appendingPathComponent("automation-state.md"), atomically: true, encoding: .utf8)
+    try "value\n".write(to: fixture.secondary.appendingPathComponent("metrics.csv"), atomically: true, encoding: .utf8)
+
+    let result = RepositoryPullService(fileManager: fixture.fileManager).pullRepositories(
+        repositoriesRoot: fixture.repositoriesRoot,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.results.map(\.status) == [.upToDate])
+    #expect(result.results.first?.message.contains("Committed 2 safe generated artifact files") == true)
+    #expect(result.results.first?.message.contains("Pushed safe generated artifact commit") == true)
+    #expect(try fixture.git(["status", "--porcelain"], in: fixture.secondary) == "")
+
+    try fixture.git(["fetch", "origin", "main"], in: fixture.primary)
+    #expect(try fixture.git(["show", "origin/main:automation-state.md"], in: fixture.primary) == "state\n")
+    #expect(try fixture.git(["show", "origin/main:metrics.csv"], in: fixture.primary) == "value\n")
+}
+
+@Test func repositoryPullCommitsSafeArtifactsThenMergesRemoteChanges() throws {
+    let fixture = try RepositoryPullFixture()
+    defer { fixture.cleanup() }
+
+    try fixture.writePrimaryFile("REMOTE.md", "remote\n")
+    try fixture.git(["add", "REMOTE.md"], in: fixture.primary)
+    try fixture.git(["commit", "-m", "remote"], in: fixture.primary)
+    try fixture.git(["push", "origin", "main"], in: fixture.primary)
+
+    try "state\n".write(to: fixture.secondary.appendingPathComponent("automation-state.yml"), atomically: true, encoding: .utf8)
+
+    let result = RepositoryPullService(fileManager: fixture.fileManager).pullRepositories(
+        repositoriesRoot: fixture.repositoriesRoot,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.results.map(\.status) == [.pulledMerge])
+    #expect(result.results.first?.message.contains("Committed 1 safe generated artifact file") == true)
+    #expect(result.results.first?.message.contains("Pushed safe generated artifact commit") == true)
+    #expect(fixture.fileManager.fileExists(atPath: fixture.secondary.appendingPathComponent("REMOTE.md").path))
+    #expect(try fixture.git(["status", "--porcelain"], in: fixture.secondary) == "")
+
+    try fixture.git(["fetch", "origin", "main"], in: fixture.primary)
+    #expect(try fixture.git(["show", "origin/main:automation-state.yml"], in: fixture.primary) == "state\n")
+    #expect(try fixture.git(["show", "origin/main:REMOTE.md"], in: fixture.primary) == "remote\n")
+}
+
+@Test func repositoryPullDoesNotAutoPushExistingLocalCommitsWithSafeArtifacts() throws {
+    let fixture = try RepositoryPullFixture()
+    defer { fixture.cleanup() }
+
+    try "local commit\n".write(to: fixture.secondary.appendingPathComponent("LOCAL.md"), atomically: true, encoding: .utf8)
+    try fixture.git(["add", "LOCAL.md"], in: fixture.secondary)
+    try fixture.git(["commit", "-m", "local"], in: fixture.secondary)
+    try "state\n".write(to: fixture.secondary.appendingPathComponent("automation-state.md"), atomically: true, encoding: .utf8)
+
+    let result = RepositoryPullService(fileManager: fixture.fileManager).pullRepositories(
+        repositoriesRoot: fixture.repositoriesRoot,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.results.map(\.status) == [.skippedLocalAhead])
+    #expect(result.results.first?.message.contains("safe artifact auto-push would also push existing local commits") == true)
+    #expect(try fixture.git(["status", "--porcelain"], in: fixture.secondary) == "?? automation-state.md\n")
+
+    try fixture.git(["fetch", "origin", "main"], in: fixture.primary)
+    #expect(throws: TestGitError.self) {
+        try fixture.git(["show", "origin/main:LOCAL.md"], in: fixture.primary)
+    }
+    #expect(throws: TestGitError.self) {
+        try fixture.git(["show", "origin/main:automation-state.md"], in: fixture.primary)
+    }
 }
 
 @Test func repositoryPullMergesCleanDivergedRepositories() throws {

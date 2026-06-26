@@ -52,6 +52,7 @@ public final class RepositoryPullService {
     private let fileManager: FileManager
     private let gitExecutableURL: URL
     private let commandTimeout: TimeInterval
+    private let safeAutoCommitExtensions: Set<String> = ["csv", "md", "xls", "xlsx", "yaml", "yml"]
 
     public init(
         fileManager: FileManager = .default,
@@ -116,10 +117,6 @@ public final class RepositoryPullService {
         }
 
         do {
-            guard try runGit(["status", "--porcelain"], in: repositoryURL).trimmedOutput.isEmpty else {
-                return result(.skippedDirty, "Skipped because the working tree has local changes.")
-            }
-
             guard !(try hasMergeOrRebaseInProgress(in: repositoryURL)) else {
                 return result(.skippedMergeInProgress, "Skipped because a merge or rebase is already in progress.")
             }
@@ -133,21 +130,65 @@ public final class RepositoryPullService {
             }
 
             _ = try runGit(["fetch", "--prune"], in: repositoryURL)
+            let localSHABeforeAutoCommit = try runGit(["rev-parse", "HEAD"], in: repositoryURL).trimmedOutput
+            let upstreamSHABeforeAutoCommit = try runGit(["rev-parse", "@{u}"], in: repositoryURL).trimmedOutput
+            let mergeBaseSHABeforeAutoCommit = try runGit(["merge-base", "HEAD", "@{u}"], in: repositoryURL).trimmedOutput
+
+            let dirtyStatus = try dirtyWorktreeStatus(in: repositoryURL)
+            let autoCommitMessage: String?
+            if dirtyStatus.isEmpty {
+                autoCommitMessage = nil
+            } else {
+                guard dirtyStatus.canAutoCommit else {
+                    return result(
+                        .skippedDirty,
+                        "Skipped because the working tree has local changes outside safe generated artifacts."
+                    )
+                }
+
+                guard localSHABeforeAutoCommit == upstreamSHABeforeAutoCommit
+                    || mergeBaseSHABeforeAutoCommit == localSHABeforeAutoCommit else {
+                    return result(
+                        .skippedLocalAhead,
+                        "Skipped because safe artifact auto-push would also push existing local commits."
+                    )
+                }
+
+                autoCommitMessage = try autoCommitSafeArtifacts(dirtyStatus.entries, in: repositoryURL)
+            }
 
             let localSHA = try runGit(["rev-parse", "HEAD"], in: repositoryURL).trimmedOutput
             let upstreamSHA = try runGit(["rev-parse", "@{u}"], in: repositoryURL).trimmedOutput
             let mergeBaseSHA = try runGit(["merge-base", "HEAD", "@{u}"], in: repositoryURL).trimmedOutput
 
             if localSHA == upstreamSHA {
-                return result(.upToDate, "Already up to date.")
+                return result(.upToDate, [autoCommitMessage, "Already up to date."].compactMap { $0 }.joined(separator: " "))
             }
 
             if mergeBaseSHA == localSHA {
                 _ = try runGit(["merge", "--ff-only", "@{u}"], in: repositoryURL)
-                return result(.pulledFastForward, "Pulled upstream changes with a fast-forward merge.")
+                if autoCommitMessage != nil {
+                    _ = try runGit(["push"], in: repositoryURL)
+                }
+                return result(
+                    .pulledFastForward,
+                    [autoCommitMessage, "Pulled upstream changes with a fast-forward merge.", autoCommitMessage == nil ? nil : "Pushed safe generated artifact commit."]
+                        .compactMap { $0 }
+                        .joined(separator: " ")
+                )
             }
 
             if mergeBaseSHA == upstreamSHA {
+                if autoCommitMessage != nil {
+                    _ = try runGit(["push"], in: repositoryURL)
+                    return result(
+                        .upToDate,
+                        [autoCommitMessage, "Pushed safe generated artifact commit. Already up to date."]
+                            .compactMap { $0 }
+                            .joined(separator: " ")
+                    )
+                }
+
                 return result(.skippedLocalAhead, "Skipped because the local branch is ahead of upstream.")
             }
 
@@ -157,7 +198,15 @@ public final class RepositoryPullService {
 
             do {
                 _ = try runGit(["merge", "--no-edit", "@{u}"], in: repositoryURL)
-                return result(.pulledMerge, "Pulled upstream changes with a clean merge commit.")
+                if autoCommitMessage != nil {
+                    _ = try runGit(["push"], in: repositoryURL)
+                }
+                return result(
+                    .pulledMerge,
+                    [autoCommitMessage, "Pulled upstream changes with a clean merge commit.", autoCommitMessage == nil ? nil : "Pushed safe generated artifact commit."]
+                        .compactMap { $0 }
+                        .joined(separator: " ")
+                )
             } catch {
                 _ = try? runGit(["merge", "--abort"], in: repositoryURL)
                 return result(.skippedConflicts, "Skipped because Git could not complete a clean merge.")
@@ -187,6 +236,40 @@ public final class RepositoryPullService {
 
     private func canMergeCleanly(in repositoryURL: URL) -> Bool {
         (try? runGit(["merge-tree", "--write-tree", "--quiet", "HEAD", "@{u}"], in: repositoryURL)) != nil
+    }
+
+    private func dirtyWorktreeStatus(in repositoryURL: URL) throws -> DirtyWorktreeStatus {
+        let output = try runGit(["status", "--porcelain=v1", "-z"], in: repositoryURL).output
+        let entries = DirtyWorktreeEntry.parse(output)
+        return DirtyWorktreeStatus(entries: entries) { entry in
+            isSafeAutoCommitEntry(entry)
+        }
+    }
+
+    private func isSafeAutoCommitEntry(_ entry: DirtyWorktreeEntry) -> Bool {
+        guard entry.originalPath == nil else {
+            return false
+        }
+
+        let statusCharacters = Set(entry.status)
+        guard statusCharacters.isDisjoint(with: ["D", "R", "C", "U"]) else {
+            return false
+        }
+
+        let allowedStatusCharacters: Set<Character> = [" ", "?", "A", "M"]
+        guard statusCharacters.isSubset(of: allowedStatusCharacters) else {
+            return false
+        }
+
+        let pathExtension = URL(fileURLWithPath: entry.path).pathExtension.lowercased()
+        return safeAutoCommitExtensions.contains(pathExtension)
+    }
+
+    private func autoCommitSafeArtifacts(_ entries: [DirtyWorktreeEntry], in repositoryURL: URL) throws -> String {
+        let paths = entries.map(\.path).sorted()
+        _ = try runGit(["add", "--"] + paths, in: repositoryURL)
+        _ = try runGit(["commit", "-m", "chore: save secondary machine artifacts"], in: repositoryURL)
+        return "Committed \(paths.count) safe generated artifact file\(paths.count == 1 ? "" : "s") before pulling."
     }
 
     private func runGit(_ arguments: [String], in repositoryURL: URL) throws -> GitCommandResult {
@@ -240,6 +323,54 @@ public final class RepositoryPullService {
         }
 
         return result
+    }
+}
+
+private struct DirtyWorktreeStatus {
+    var entries: [DirtyWorktreeEntry]
+    var canAutoCommit: Bool
+
+    init(entries: [DirtyWorktreeEntry], isSafeEntry: (DirtyWorktreeEntry) -> Bool) {
+        self.entries = entries
+        self.canAutoCommit = !entries.isEmpty && entries.allSatisfy(isSafeEntry)
+    }
+
+    var isEmpty: Bool {
+        entries.isEmpty
+    }
+}
+
+private struct DirtyWorktreeEntry: Equatable {
+    var status: String
+    var path: String
+    var originalPath: String?
+
+    static func parse(_ porcelainOutput: String) -> [DirtyWorktreeEntry] {
+        let components = porcelainOutput.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+        var entries: [DirtyWorktreeEntry] = []
+        var index = 0
+
+        while index < components.count {
+            let component = components[index]
+            guard component.count >= 4 else {
+                index += 1
+                continue
+            }
+
+            let status = String(component.prefix(2))
+            let path = String(component.dropFirst(3))
+
+            if status.contains("R") || status.contains("C") {
+                let originalPath = index + 1 < components.count ? components[index + 1] : nil
+                entries.append(DirtyWorktreeEntry(status: status, path: path, originalPath: originalPath))
+                index += 2
+            } else {
+                entries.append(DirtyWorktreeEntry(status: status, path: path, originalPath: nil))
+                index += 1
+            }
+        }
+
+        return entries
     }
 }
 
