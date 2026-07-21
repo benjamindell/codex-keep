@@ -488,7 +488,6 @@ public final class BackupService {
                 .fileSizeKey
             ])
             if resourceValues.isSymbolicLink == true {
-                enumerator.skipDescendants()
                 continue
             }
 
@@ -499,7 +498,9 @@ public final class BackupService {
 
             let relativePath = String(canonicalChildPath.dropFirst(canonicalSourcePath.count + 1))
             if shouldExclude(relativePath: relativePath, excludedPaths: excludedPaths) {
-                enumerator.skipDescendants()
+                if resourceValues.isDirectory == true {
+                    enumerator.skipDescendants()
+                }
                 continue
             }
 

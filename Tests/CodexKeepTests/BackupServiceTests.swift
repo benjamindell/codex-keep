@@ -294,7 +294,9 @@ import Testing
     let codexSkills = root.appending(relativePath: ".codex/skills")
     let agentsSkill = root.appending(relativePath: ".agents/skills/heysummit-intercom-article-audit")
     let symlinkedCodexSkill = codexSkills.appendingPathComponent("heysummit-intercom-article-audit")
+    let localCodexSkill = codexSkills.appendingPathComponent("heysummit-support-investigator")
     let destination = root.appendingPathComponent("Backup", isDirectory: true)
+    let additionalLocalSkillNames = (0..<32).map { String(format: "local-skill-%02d", $0) }
 
     try fileManager.createDirectory(at: codexSkills, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: agentsSkill, withIntermediateDirectories: true)
@@ -309,6 +311,24 @@ import Testing
         encoding: .utf8
     )
     try fileManager.createSymbolicLink(at: symlinkedCodexSkill, withDestinationURL: agentsSkill)
+    try fileManager.createDirectory(at: localCodexSkill, withIntermediateDirectories: true)
+    try "support skill".write(
+        to: localCodexSkill.appendingPathComponent("SKILL.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    for (index, skillName) in additionalLocalSkillNames.enumerated() {
+        let linkedSkill = codexSkills.appendingPathComponent(String(format: "linked-skill-%02d", index))
+        try fileManager.createSymbolicLink(at: linkedSkill, withDestinationURL: agentsSkill)
+
+        let localSkill = codexSkills.appendingPathComponent(skillName)
+        try fileManager.createDirectory(at: localSkill, withIntermediateDirectories: true)
+        try "local skill \(index)".write(
+            to: localSkill.appendingPathComponent("SKILL.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+    }
 
     let result = try BackupService(fileManager: fileManager).runBackup(
         settings: BackupSettings(destinationRootPath: destination.path, enabledItemIDs: ["codex-skills"]),
@@ -321,13 +341,37 @@ import Testing
     #expect(!result.manifest.files.contains {
         $0.backupRelativePath == "Codex/skills/heysummit-intercom-article-audit/SKILL.md"
     })
+    #expect(fileManager.fileExists(
+        atPath: result.latestURL.appending(
+            relativePath: "Codex/skills/heysummit-support-investigator/SKILL.md"
+        ).path
+    ))
+    #expect(result.manifest.files.contains {
+        $0.backupRelativePath == "Codex/skills/heysummit-support-investigator/SKILL.md"
+    })
+    for skillName in additionalLocalSkillNames {
+        #expect(fileManager.fileExists(
+            atPath: result.latestURL.appending(
+                relativePath: "Codex/skills/\(skillName)/SKILL.md"
+            ).path
+        ))
+    }
 
     let extractedArchive = root.appendingPathComponent("Extracted", isDirectory: true)
     try PayloadArchive.extract(
         archiveURL: result.latestURL.appendingPathComponent(PayloadArchive.fileName),
         to: extractedArchive
     )
-    #expect(!fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md").path))
+    #expect(!fileManager.fileExists(
+        atPath: extractedArchive.appending(
+            relativePath: "Codex/skills/heysummit-intercom-article-audit/SKILL.md"
+        ).path
+    ))
+    #expect(fileManager.fileExists(
+        atPath: extractedArchive.appending(
+            relativePath: "Codex/skills/heysummit-support-investigator/SKILL.md"
+        ).path
+    ))
 }
 
 @Test func backupRefreshesStableLatestFolderAndRemovesStaleFiles() throws {

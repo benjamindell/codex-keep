@@ -1,7 +1,6 @@
-# Codex Keep 0.1.45
+# Codex Keep 0.1.46
 
-Keeps secondary-machine repositories moving when automations only changed safe state files.
+Ensures every local custom skill is included in backups and trusted-machine sync.
 
-- Commits generated `.md`, `.yml`, `.yaml`, `.csv`, `.xls`, and `.xlsx` artifacts before pulling.
-- Pushes the generated-artifact commit after upstream updates are safely integrated.
-- Still skips repositories with code changes, missing upstreams, conflicts, or existing local commits that would be pushed.
+- Prevents normal skill folders from being copied as empty directories when they follow a linked skill.
+- Keeps linked skills excluded while preserving every regular skill file in the backup payload and manifest.
