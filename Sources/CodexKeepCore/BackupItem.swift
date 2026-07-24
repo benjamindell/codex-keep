@@ -136,6 +136,7 @@ public enum DefaultBackupItems {
             "sessions",
             "shell_snapshots",
             "sqlite",
+            "state",
             "tmp",
             "vendor_imports",
             "worktrees"

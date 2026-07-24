@@ -1,6 +1,6 @@
-# Codex Keep 0.1.46
+# Codex Keep 0.1.47
 
-Ensures every local custom skill is included in backups and trusted-machine sync.
+Prevents Codex runtime state from bloating backups and causing timeouts on secondary Macs.
 
-- Prevents normal skill folders from being copied as empty directories when they follow a linked skill.
-- Keeps linked skills excluded while preserving every regular skill file in the backup payload and manifest.
+- Excludes `~/.codex/state` even when it contains Markdown files.
+- Keeps user-authored top-level Markdown folders eligible for backup and trusted-machine sync.

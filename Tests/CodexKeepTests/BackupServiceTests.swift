@@ -10,9 +10,11 @@ import Testing
     let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
     let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
     let cache = codexHome.appendingPathComponent("cache", isDirectory: true)
+    let state = codexHome.appendingPathComponent("state", isDirectory: true)
 
     try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: cache, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: state, withIntermediateDirectories: true)
     try "memory".write(
         to: socialPresence.appendingPathComponent("voice-preference-memory.md"),
         atomically: true,
@@ -20,6 +22,11 @@ import Testing
     )
     try "cache".write(
         to: cache.appendingPathComponent("debug.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "runtime state".write(
+        to: state.appendingPathComponent("task.md"),
         atomically: true,
         encoding: .utf8
     )
@@ -32,6 +39,7 @@ import Testing
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/social-presence") })
     #expect(itemPaths.contains { $0.hasSuffix("/.aws/credentials") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/cache") })
+    #expect(!itemPaths.contains { $0.hasSuffix("/.codex/state") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/auth.json") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/sessions") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/logs_2.sqlite") })
