@@ -104,7 +104,7 @@ After updating `site/appcast.xml` and `site/downloads/Codex-Keep.zip`, deploy th
 
 ```sh
 cd site
-npx vercel@latest --prod --yes
+npx vercel@latest --prod --yes --scope benjamin-dell
 ```
 
 Verify the live Sparkle feed and archive before testing from the menu bar:
