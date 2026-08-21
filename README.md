@@ -47,6 +47,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 - `Sync Local Repo Dev Files` is opt-in. When enabled, Codex Keep backs up supported local-only dev files from discovered Git repositories and syncs them only to trusted Macs that already have the same repository checkout.
 - Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.
 - Peer deletions require review and create tombstones so the deletion can propagate deliberately.
+- A local tombstone prevents an older peer backup from automatically restoring the deleted file while that review is pending.
 - Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted.
 
 ## Managing automations

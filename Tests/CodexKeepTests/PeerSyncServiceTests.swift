@@ -57,6 +57,48 @@ import Testing
     #expect(result.updatedSettings.syncTombstones["Codex/skills/deleted/SKILL.md"] != nil)
 }
 
+@Test func peerSyncDoesNotRestoreLocallyDeletedSkillFromStalePeer() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    let deletedPath = "Codex/skills/shared/SKILL.md"
+    let deletedURL = fixture.home.appending(relativePath: ".codex/skills/shared/SKILL.md")
+    try fixture.fileManager.removeItem(at: deletedURL)
+
+    let service = PeerSyncService(fileManager: fixture.fileManager)
+    fixture.localManifest = try BackupService(fileManager: fixture.fileManager).runBackup(
+        settings: fixture.settings,
+        items: DefaultBackupItems.items(homeDirectory: fixture.home, fileManager: fixture.fileManager),
+        now: Date(timeIntervalSince1970: 10)
+    ).manifest
+    fixture.settings = service.settingsByRecordingLocalState(
+        fixture.settings,
+        localManifest: fixture.localManifest,
+        homeDirectory: fixture.home,
+        items: DefaultBackupItems.items(homeDirectory: fixture.home, fileManager: fixture.fileManager),
+        now: Date(timeIntervalSince1970: 10)
+    )
+
+    #expect(fixture.settings.syncTombstones[deletedPath] != nil)
+
+    let plans = try fixture.makePlans()
+    let deletedItem = try #require(plans.flatMap(\.items).first {
+        $0.backupRelativePath == deletedPath
+    })
+    #expect(deletedItem.status == .localChanged)
+    #expect(!deletedItem.isAutomatic)
+
+    let automaticItemIDs = Set(plans.flatMap(\.automaticItemIDs))
+    _ = try service.apply(
+        plans: plans,
+        selectedItemIDs: automaticItemIDs,
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 11)
+    )
+
+    #expect(!fixture.fileManager.fileExists(atPath: deletedURL.path))
+}
+
 @Test func reviewedConfigConflictReplacesLocalConfigAndRecordsSyncState() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }

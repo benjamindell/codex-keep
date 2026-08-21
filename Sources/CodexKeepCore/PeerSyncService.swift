@@ -218,7 +218,8 @@ public final class PeerSyncService {
                 let status = fileStatus(
                     localFile: localFile,
                     peerFile: peerFile,
-                    syncedState: settings.syncStates[peerFile.backupRelativePath]
+                    syncedState: settings.syncStates[peerFile.backupRelativePath],
+                    localTombstone: settings.syncTombstones[peerFile.backupRelativePath]
                 )
 
                 planItems.append(PeerSyncPlanItem(
@@ -525,8 +526,13 @@ public final class PeerSyncService {
     private func fileStatus(
         localFile: BackupManifestFile?,
         peerFile: BackupManifestFile,
-        syncedState: SyncFileState?
+        syncedState: SyncFileState?,
+        localTombstone: SyncTombstone?
     ) -> PeerSyncPlanItem.Status {
+        if localFile == nil, localTombstone != nil {
+            return .localChanged
+        }
+
         guard let localFile else {
             return .incomingNew
         }
