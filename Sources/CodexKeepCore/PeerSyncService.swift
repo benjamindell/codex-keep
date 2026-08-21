@@ -30,9 +30,29 @@ public enum PeerSyncServiceError: LocalizedError, Equatable {
 public struct PeerSyncPlan: Equatable, Sendable {
     public var peerName: String
     public var sourceURL: URL
+    public var contentStoreURL: URL?
+    public var generationID: String?
     public var manifest: BackupManifest
     public var items: [PeerSyncPlanItem]
     public var warnings: [String]
+
+    public init(
+        peerName: String,
+        sourceURL: URL,
+        contentStoreURL: URL? = nil,
+        generationID: String? = nil,
+        manifest: BackupManifest,
+        items: [PeerSyncPlanItem],
+        warnings: [String]
+    ) {
+        self.peerName = peerName
+        self.sourceURL = sourceURL
+        self.contentStoreURL = contentStoreURL
+        self.generationID = generationID
+        self.manifest = manifest
+        self.items = items
+        self.warnings = warnings
+    }
 
     public var automaticItemIDs: Set<String> {
         Set(items.filter(\.isAutomatic).map(\.id))
@@ -97,9 +117,17 @@ public final class PeerSyncService {
     private let fileManager: FileManager
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
+    private let diagnosticLog: (String) -> Void
+    private let manifestWaitDuration: TimeInterval
 
-    public init(fileManager: FileManager = .default) {
+    public init(
+        fileManager: FileManager = .default,
+        manifestWaitDuration: TimeInterval = 10,
+        diagnosticLog: @escaping (String) -> Void = { _ in }
+    ) {
         self.fileManager = fileManager
+        self.manifestWaitDuration = manifestWaitDuration
+        self.diagnosticLog = diagnosticLog
         self.decoder = JSONDecoder()
         self.decoder.dateDecodingStrategy = .iso8601
         self.encoder = JSONEncoder()
@@ -189,18 +217,20 @@ public final class PeerSyncService {
         let localFiles = Dictionary(uniqueKeysWithValues: localManifest.files.map { ($0.backupRelativePath, $0) })
 
         return try peerNames.compactMap { peerName in
-            let sourceURL = URL(fileURLWithPath: settings.destinationRootPath)
+            let machineURL = URL(fileURLWithPath: settings.destinationRootPath)
                 .standardizedFileURL
                 .appendingPathComponent(peerName, isDirectory: true)
-                .appendingPathComponent("latest", isDirectory: true)
-            let manifest: BackupManifest
+            let source: PeerManifestSource
             do {
-                manifest = try readManifest(at: sourceURL)
+                source = try peerManifestSource(at: machineURL, peerName: peerName)
             } catch PeerSyncServiceError.missingPeerManifest {
+                diagnosticLog("Waiting for iCloud to make trusted peer \(peerName)'s manifest available")
                 return nil
-            } catch PeerSyncServiceError.unreadablePeerManifest {
+            } catch let PeerSyncServiceError.unreadablePeerManifest(path, reason) {
+                diagnosticLog("Trusted peer \(peerName)'s manifest is not readable yet at \(path): \(reason)")
                 return nil
             }
+            let manifest = source.manifest
             let syncablePeerFiles = manifest.files.filter { isSyncableBackupPath($0.backupRelativePath) }
             let peerFiles = Dictionary(uniqueKeysWithValues: syncablePeerFiles.map { ($0.backupRelativePath, $0) })
             let peerTombstones = Dictionary(uniqueKeysWithValues: manifest.tombstones.map { ($0.backupRelativePath, $0) })
@@ -283,7 +313,9 @@ public final class PeerSyncService {
 
             return PeerSyncPlan(
                 peerName: peerName,
-                sourceURL: sourceURL,
+                sourceURL: source.sourceURL,
+                contentStoreURL: source.contentStoreURL,
+                generationID: source.generationID,
                 manifest: manifest,
                 items: planItems.sorted(by: sortPlanItems),
                 warnings: manifest.warnings
@@ -457,16 +489,128 @@ public final class PeerSyncService {
         )
     }
 
-    private func readManifest(at sourceURL: URL) throws -> BackupManifest {
-        let manifestURL = sourceURL.appendingPathComponent("manifest.json")
-        try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
-        try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
+    private struct PeerManifestSource {
+        var sourceURL: URL
+        var contentStoreURL: URL?
+        var generationID: String?
+        var manifest: BackupManifest
+    }
 
-        if let manifestData = try? Data(contentsOf: manifestURL) {
-            return try decodeManifest(data: manifestData, manifestURL: manifestURL)
+    private func peerManifestSource(at machineURL: URL, peerName: String) throws -> PeerManifestSource {
+        if let generationSource = newestReadableGeneration(at: machineURL, peerName: peerName) {
+            return generationSource
         }
 
-        return try readManifestFromPayloadArchive(at: sourceURL, manifestURL: manifestURL)
+        let legacyLatestURL = machineURL.appendingPathComponent("latest", isDirectory: true)
+        let manifest = try readManifest(at: legacyLatestURL)
+        diagnosticLog("Using trusted peer \(peerName)'s legacy latest backup while committed sync generations are unavailable")
+        return PeerManifestSource(
+            sourceURL: legacyLatestURL,
+            contentStoreURL: nil,
+            generationID: nil,
+            manifest: manifest
+        )
+    }
+
+    private func newestReadableGeneration(at machineURL: URL, peerName: String) -> PeerManifestSource? {
+        let generationsURL = SyncGenerationLayout.generationsURL(in: machineURL)
+        let blobsURL = SyncGenerationLayout.blobsURL(in: machineURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: generationsURL)
+
+        guard let generationURLs = try? fileManager.contentsOfDirectory(
+            at: generationsURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter({ $0.pathExtension == "json" })
+        .sorted(by: { $0.lastPathComponent > $1.lastPathComponent }),
+              !generationURLs.isEmpty
+        else {
+            return nil
+        }
+
+        let newestGenerationURL = generationURLs[0]
+        for (index, generationURL) in generationURLs.enumerated() {
+            try? fileManager.startDownloadingUbiquitousItem(at: generationURL)
+            guard let data = readDataIfMaterialized(at: generationURL),
+                  let manifest = try? decodeManifest(data: data, manifestURL: generationURL)
+            else {
+                continue
+            }
+
+            if index > 0 {
+                diagnosticLog(
+                    "Using trusted peer \(peerName)'s previous complete sync generation \(generationURL.deletingPathExtension().lastPathComponent) while the newest generation is unavailable"
+                )
+            }
+            return PeerManifestSource(
+                sourceURL: SyncGenerationLayout.rootURL(in: machineURL),
+                contentStoreURL: blobsURL,
+                generationID: generationURL.deletingPathExtension().lastPathComponent,
+                manifest: manifest
+            )
+        }
+
+        let deadline = Date().addingTimeInterval(manifestWaitDuration)
+        while Date() < deadline {
+            try? fileManager.startDownloadingUbiquitousItem(at: generationsURL)
+            try? fileManager.startDownloadingUbiquitousItem(at: newestGenerationURL)
+            if let data = readDataIfMaterialized(at: newestGenerationURL),
+               let manifest = try? decodeManifest(data: data, manifestURL: newestGenerationURL) {
+                return PeerManifestSource(
+                    sourceURL: SyncGenerationLayout.rootURL(in: machineURL),
+                    contentStoreURL: blobsURL,
+                    generationID: newestGenerationURL.deletingPathExtension().lastPathComponent,
+                    manifest: manifest
+                )
+            }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
+
+        diagnosticLog("Waiting for iCloud to download trusted peer \(peerName)'s committed sync generation")
+        return nil
+    }
+
+    private func readManifest(at sourceURL: URL) throws -> BackupManifest {
+        let manifestURL = sourceURL.appendingPathComponent("manifest.json")
+        let payloadURL = sourceURL.appendingPathComponent(PayloadArchive.fileName)
+        try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
+        try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
+
+        let deadline = Date().addingTimeInterval(
+            isLikelyICloudURL(manifestURL) ? manifestWaitDuration : 0
+        )
+        repeat {
+            if let manifestData = readDataIfMaterialized(at: manifestURL) {
+                return try decodeManifest(data: manifestData, manifestURL: manifestURL)
+            }
+            if isReadyForImmediateRead(payloadURL) {
+                return try readManifestFromPayloadArchive(
+                    payloadURL: payloadURL,
+                    manifestURL: manifestURL
+                )
+            }
+            guard Date() < deadline else {
+                break
+            }
+            try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
+            try? fileManager.startDownloadingUbiquitousItem(at: manifestURL)
+            try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
+            Thread.sleep(forTimeInterval: 0.25)
+        } while true
+
+        throw PeerSyncServiceError.missingPeerManifest(manifestURL.path)
+    }
+
+    private func readDataIfMaterialized(at url: URL) -> Data? {
+        guard isReadyForImmediateRead(url),
+              let data = try? Data(contentsOf: url),
+              !data.isEmpty
+        else {
+            return nil
+        }
+        return data
     }
 
     private func decodeManifest(data: Data, manifestURL: URL) throws -> BackupManifest {
@@ -483,14 +627,10 @@ public final class PeerSyncService {
         return manifest
     }
 
-    private func readManifestFromPayloadArchive(at sourceURL: URL, manifestURL: URL) throws -> BackupManifest {
-        let payloadURL = sourceURL.appendingPathComponent(PayloadArchive.fileName)
-        try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
-
-        guard fileManager.fileExists(atPath: payloadURL.path) else {
-            throw PeerSyncServiceError.missingPeerManifest(manifestURL.path)
-        }
-
+    private func readManifestFromPayloadArchive(
+        payloadURL: URL,
+        manifestURL: URL
+    ) throws -> BackupManifest {
         let extractionURL = fileManager.temporaryDirectory
             .appendingPathComponent("codex-keep-manifest-\(UUID().uuidString)", isDirectory: true)
         defer {
@@ -512,6 +652,7 @@ public final class PeerSyncService {
     private func hasPeerBackup(at machineURL: URL) -> Bool {
         let latestURL = machineURL.appendingPathComponent("latest", isDirectory: true)
         let snapshotsURL = machineURL.appendingPathComponent("Snapshots", isDirectory: true)
+        let generationsURL = SyncGenerationLayout.generationsURL(in: machineURL)
         let manifestURL = latestURL.appendingPathComponent("manifest.json")
 
         try? fileManager.startDownloadingUbiquitousItem(at: machineURL)
@@ -521,6 +662,7 @@ public final class PeerSyncService {
         return fileManager.fileExists(atPath: manifestURL.path)
             || fileManager.fileExists(atPath: latestURL.path)
             || fileManager.fileExists(atPath: snapshotsURL.path)
+            || fileManager.fileExists(atPath: generationsURL.path)
     }
 
     private func fileStatus(
@@ -569,9 +711,7 @@ public final class PeerSyncService {
     }
 
     private func isSyncableBackupPath(_ backupRelativePath: String) -> Bool {
-        !backupRelativePath.hasPrefix("Codex/automations/")
-            && backupRelativePath != "Codex/automations"
-            && !BackupPathFilter.shouldExclude(relativePath: backupRelativePath)
+        SyncPathPolicy.isSyncable(backupRelativePath)
     }
 
     private func targetURL(for backupRelativePath: String, items: [BackupItem]) -> URL? {
@@ -692,8 +832,27 @@ public final class PeerSyncService {
         extractedPayloads: inout [String: URL],
         waitUntil deadline: Date
     ) throws -> URL? {
+        if let contentStoreURL = plan.contentStoreURL,
+           let sha256 = plan.items.first(where: {
+               $0.backupRelativePath == backupRelativePath
+           })?.peerSHA256 {
+            let blobURL = SyncGenerationLayout.blobURL(for: sha256, in: contentStoreURL)
+            return preparePeerSourceFile(
+                at: blobURL,
+                downloadRootURL: contentStoreURL,
+                waitUntil: deadline,
+                waitForMissingFile: true
+            ) ? blobURL : nil
+        }
+
         let sourceURL = plan.sourceURL.appendingRelativePath(backupRelativePath)
-        if preparePeerSourceFile(at: sourceURL, waitUntil: Date(), waitForMissingFile: false) {
+        let sourceExists = fileManager.fileExists(atPath: sourceURL.path)
+        if preparePeerSourceFile(
+            at: sourceURL,
+            downloadRootURL: plan.sourceURL,
+            waitUntil: sourceExists ? deadline : Date(),
+            waitForMissingFile: false
+        ) {
             return sourceURL
         }
 
@@ -732,7 +891,8 @@ public final class PeerSyncService {
             try? fileManager.startDownloadingUbiquitousItem(at: plan.sourceURL)
             try? fileManager.startDownloadingUbiquitousItem(at: payloadURL)
 
-            if fileManager.fileExists(atPath: payloadURL.path) {
+            if fileManager.fileExists(atPath: payloadURL.path),
+               isReadyForImmediateRead(payloadURL) {
                 let extractionURL = fileManager.temporaryDirectory
                     .appendingPathComponent("codex-keep-peer-\(UUID().uuidString)", isDirectory: true)
 
@@ -760,9 +920,14 @@ public final class PeerSyncService {
 
     private func preparePeerSourceFile(
         at sourceURL: URL,
+        downloadRootURL: URL? = nil,
         waitUntil deadline: Date,
         waitForMissingFile: Bool
     ) -> Bool {
+        if let downloadRootURL {
+            try? fileManager.startDownloadingUbiquitousItem(at: downloadRootURL)
+        }
+        try? fileManager.startDownloadingUbiquitousItem(at: sourceURL.deletingLastPathComponent())
         try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
 
         repeat {
@@ -781,6 +946,11 @@ public final class PeerSyncService {
                 return false
             }
 
+            if let downloadRootURL {
+                try? fileManager.startDownloadingUbiquitousItem(at: downloadRootURL)
+            }
+            try? fileManager.startDownloadingUbiquitousItem(at: sourceURL.deletingLastPathComponent())
+            try? fileManager.startDownloadingUbiquitousItem(at: sourceURL)
             Thread.sleep(forTimeInterval: 0.2)
         } while true
     }
@@ -790,21 +960,7 @@ public final class PeerSyncService {
     }
 
     private func isReadyForImmediateRead(_ url: URL) -> Bool {
-        guard fileManager.fileExists(atPath: url.path) else {
-            return false
-        }
-
-        guard let values = try? url.resourceValues(forKeys: [
-            .isUbiquitousItemKey,
-            .ubiquitousItemDownloadingStatusKey
-        ]),
-              values.isUbiquitousItem == true
-        else {
-            return true
-        }
-
-        return values.ubiquitousItemDownloadingStatus == .current
-            || values.ubiquitousItemDownloadingStatus == .downloaded
+        SyncFileReadiness.isMaterialized(url, fileManager: fileManager)
     }
 
     private func replaceFile(from sourceURL: URL, to targetURL: URL) throws {

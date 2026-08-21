@@ -292,6 +292,68 @@ import Testing
         to: extractedArchive
     )
     #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
+
+    let generationURLs = try fileManager.contentsOfDirectory(
+        at: SyncGenerationLayout.generationsURL(in: machineRoot),
+        includingPropertiesForKeys: nil
+    )
+    #expect(generationURLs.count == 1)
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    let syncManifest = try decoder.decode(
+        BackupManifest.self,
+        from: Data(contentsOf: try #require(generationURLs.first))
+    )
+    #expect(syncManifest.files.contains {
+        $0.backupRelativePath == "Codex/skills/custom-skill/SKILL.md"
+    })
+    #expect(!syncManifest.files.contains {
+        $0.backupRelativePath.hasPrefix("Codex/automations/")
+    })
+    let skillFile = try #require(syncManifest.files.first {
+        $0.backupRelativePath == "Codex/skills/custom-skill/SKILL.md"
+    })
+    let skillBlobURL = SyncGenerationLayout.blobURL(
+        for: skillFile.sha256,
+        in: SyncGenerationLayout.blobsURL(in: machineRoot)
+    )
+    #expect(try String(contentsOf: skillBlobURL, encoding: .utf8) == "copy me")
+}
+
+@Test func backupSyncGenerationsReuseContentAddressedBlobs() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let skillURL = root.appending(relativePath: ".codex/skills/shared/SKILL.md")
+    let destination = root.appendingPathComponent("Backup", isDirectory: true)
+    try fileManager.createDirectory(at: skillURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try "shared skill".write(to: skillURL, atomically: true, encoding: .utf8)
+
+    let items = DefaultBackupItems.items(homeDirectory: root, fileManager: fileManager)
+    let settings = BackupSettings(
+        destinationRootPath: destination.path,
+        enabledItemIDs: ["codex-skills"]
+    )
+    let service = BackupService(fileManager: fileManager)
+    _ = try service.runBackup(settings: settings, items: items, now: Date(timeIntervalSince1970: 0))
+    _ = try service.runBackup(settings: settings, items: items, now: Date(timeIntervalSince1970: 1))
+
+    let machineRoot = destination.appendingPathComponent(Machine.currentName(), isDirectory: true)
+    let generations = try fileManager.contentsOfDirectory(
+        at: SyncGenerationLayout.generationsURL(in: machineRoot),
+        includingPropertiesForKeys: nil
+    )
+    let shardDirectories = try fileManager.contentsOfDirectory(
+        at: SyncGenerationLayout.blobsURL(in: machineRoot),
+        includingPropertiesForKeys: nil
+    )
+    let blobs = try shardDirectories.flatMap {
+        try fileManager.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)
+    }
+
+    #expect(generations.count == 2)
+    #expect(blobs.count == 1)
 }
 
 @Test func backupSkipsSymlinkedCodexSkillDirectories() throws {
@@ -485,6 +547,11 @@ import Testing
         "1970-01-08"
     ])
     #expect(fileManager.fileExists(atPath: snapshotsURL.appending(relativePath: "1970-01-08/Codex/automations/automation.toml").path))
+    let machineRoot = destination.appendingPathComponent(Machine.currentName(), isDirectory: true)
+    let generationNames = try fileManager.contentsOfDirectory(
+        atPath: SyncGenerationLayout.generationsURL(in: machineRoot).path
+    )
+    #expect(generationNames.count == SyncGenerationLayout.retainedGenerationCount)
 }
 
 @Test func settingsStoreEnablesNewDefaultItemsForExistingSettings() throws {

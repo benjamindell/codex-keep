@@ -464,6 +464,113 @@ import Testing
     #expect(items["Codex/memories/memory_summary.md"]?.status == .incomingNew)
 }
 
+@Test func peerSyncPrefersCommittedGenerationAndAppliesContentAddressedBlob() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    var manifest = try readManifest(at: fixture.peerLatest.appendingPathComponent("manifest.json"))
+    let generationContent = "generation peer skill"
+    let generationData = Data(generationContent.utf8)
+    let generationPath = "Codex/skills/new/SKILL.md"
+    let fileIndex = try #require(manifest.files.firstIndex {
+        $0.backupRelativePath == generationPath
+    })
+    manifest.files[fileIndex].sha256 = sha256(generationContent)
+    manifest.files[fileIndex].byteCount = UInt64(generationData.count)
+    manifest.createdAt = Date(timeIntervalSince1970: 100)
+    let generationFileName = "20260821-130000-000-NEW.json"
+    try installPeerSyncGeneration(
+        fixture: fixture,
+        fileName: generationFileName,
+        manifest: manifest,
+        contentOverrides: [generationPath: generationData]
+    )
+
+    let plans = try fixture.makePlans()
+    let plan = try #require(plans.first)
+    #expect(plan.generationID == "20260821-130000-000-NEW")
+    #expect(plan.contentStoreURL != nil)
+    let item = try #require(plan.items.first { $0.backupRelativePath == generationPath })
+
+    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
+        plans: plans,
+        selectedItemIDs: [item.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 101)
+    )
+
+    #expect(result.appliedItemCount == 1)
+    #expect(try String(
+        contentsOf: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md"),
+        encoding: .utf8
+    ) == generationContent)
+}
+
+@Test func peerSyncUsesPreviousCompleteGenerationWhenNewestIsUnavailable() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    let manifest = try readManifest(at: fixture.peerLatest.appendingPathComponent("manifest.json"))
+    let olderFileName = "20260821-120000-000-OLDER.json"
+    try installPeerSyncGeneration(
+        fixture: fixture,
+        fileName: olderFileName,
+        manifest: manifest
+    )
+    let generationsURL = SyncGenerationLayout.generationsURL(
+        in: fixture.destination.appendingPathComponent("Peer-Mac", isDirectory: true)
+    )
+    try "not json".write(
+        to: generationsURL.appendingPathComponent("20260821-130000-000-NEWER.json"),
+        atomically: true,
+        encoding: .utf8
+    )
+
+    var diagnostics: [String] = []
+    let plans = try PeerSyncService(
+        fileManager: fixture.fileManager,
+        manifestWaitDuration: 0,
+        diagnosticLog: { diagnostics.append($0) }
+    ).makePlans(
+        settings: fixture.settings,
+        localManifest: fixture.localManifest,
+        homeDirectory: fixture.home,
+        items: DefaultBackupItems.items(homeDirectory: fixture.home, fileManager: fixture.fileManager)
+    )
+
+    #expect(plans.first?.generationID == "20260821-120000-000-OLDER")
+    #expect(diagnostics.contains { $0.contains("previous complete sync generation") })
+}
+
+@Test func syncFileReadinessRejectsDatalessStyleSparseFiles() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+    try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+
+    let sparseURL = root.appendingPathComponent("placeholder.json")
+    try Data().write(to: sparseURL)
+    let handle = try FileHandle(forWritingTo: sparseURL)
+    try handle.truncate(atOffset: 4096)
+    try handle.close()
+
+    let sparseValues = try sparseURL.resourceValues(forKeys: [
+        .fileSizeKey,
+        .fileAllocatedSizeKey,
+        .totalFileAllocatedSizeKey
+    ])
+    #expect(sparseValues.fileSize == 4096)
+    #expect(max(
+        sparseValues.totalFileAllocatedSize ?? 0,
+        sparseValues.fileAllocatedSize ?? 0
+    ) == 0)
+    #expect(!SyncFileReadiness.isMaterialized(sparseURL, fileManager: fileManager))
+
+    let materializedURL = root.appendingPathComponent("materialized.json")
+    try Data(repeating: 1, count: 4096).write(to: materializedURL)
+    #expect(SyncFileReadiness.isMaterialized(materializedURL, fileManager: fileManager))
+}
+
 @Test func peerSyncIgnoresConfigDeletionTombstones() throws {
     let fileManager = FileManager.default
     let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -834,6 +941,52 @@ private final class PeerSyncFixture {
         encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(manifest).write(to: peerLatest.appendingPathComponent("manifest.json"), options: .atomic)
     }
+}
+
+private func readManifest(at url: URL) throws -> BackupManifest {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return try decoder.decode(BackupManifest.self, from: Data(contentsOf: url))
+}
+
+private func installPeerSyncGeneration(
+    fixture: PeerSyncFixture,
+    fileName: String,
+    manifest: BackupManifest,
+    contentOverrides: [String: Data] = [:]
+) throws {
+    let machineRoot = fixture.destination.appendingPathComponent("Peer-Mac", isDirectory: true)
+    let generationsURL = SyncGenerationLayout.generationsURL(in: machineRoot)
+    let blobsURL = SyncGenerationLayout.blobsURL(in: machineRoot)
+    try fixture.fileManager.createDirectory(at: generationsURL, withIntermediateDirectories: true)
+    try fixture.fileManager.createDirectory(at: blobsURL, withIntermediateDirectories: true)
+
+    for file in manifest.files where SyncPathPolicy.isSyncable(file.backupRelativePath) {
+        let blobURL = SyncGenerationLayout.blobURL(for: file.sha256, in: blobsURL)
+        if fixture.fileManager.fileExists(atPath: blobURL.path) {
+            continue
+        }
+        try fixture.fileManager.createDirectory(
+            at: blobURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        if let data = contentOverrides[file.backupRelativePath] {
+            try data.write(to: blobURL, options: .atomic)
+        } else {
+            try fixture.fileManager.copyItem(
+                at: fixture.peerLatest.appending(relativePath: file.backupRelativePath),
+                to: blobURL
+            )
+        }
+    }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(manifest).write(
+        to: generationsURL.appendingPathComponent(fileName),
+        options: .atomic
+    )
 }
 
 private func writeGitConfig(in repository: URL, originURL: String, fileManager: FileManager) throws {

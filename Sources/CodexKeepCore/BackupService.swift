@@ -18,12 +18,15 @@ public enum BackupServiceError: LocalizedError, Equatable {
 public final class BackupService {
     private let fileManager: FileManager
     private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
 
     public init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         self.encoder = JSONEncoder()
         self.encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         self.encoder.dateEncodingStrategy = .iso8601
+        self.decoder = JSONDecoder()
+        self.decoder.dateDecodingStrategy = .iso8601
     }
 
     public func runBackup(
@@ -125,6 +128,12 @@ public final class BackupService {
         let manifestData = try encoder.encode(manifest)
         try manifestData.write(to: stagingURL.appendingPathComponent("manifest.json"), options: .atomic)
         try publishPayloadArchive(from: stagingURL, machineRoot: machineRoot)
+        try publishSyncGeneration(
+            in: machineRoot,
+            from: stagingURL,
+            manifest: manifest,
+            now: now
+        )
         try publishBackupContents(to: latestURL, from: stagingURL)
         try publishDailySnapshot(in: snapshotsURL, from: stagingURL, now: now)
         try pruneDailySnapshots(in: snapshotsURL, keeping: 7)
@@ -149,6 +158,137 @@ public final class BackupService {
             at: temporaryArchiveURL,
             to: stagingURL.appendingPathComponent(PayloadArchive.fileName)
         )
+    }
+
+    private func publishSyncGeneration(
+        in machineRoot: URL,
+        from stagingURL: URL,
+        manifest: BackupManifest,
+        now: Date
+    ) throws {
+        let generationsURL = SyncGenerationLayout.generationsURL(in: machineRoot)
+        let blobsURL = SyncGenerationLayout.blobsURL(in: machineRoot)
+        try fileManager.createDirectory(at: generationsURL, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: blobsURL, withIntermediateDirectories: true)
+
+        let syncableFiles = manifest.files.filter {
+            SyncPathPolicy.isSyncable($0.backupRelativePath)
+        }
+        for file in syncableFiles {
+            try publishSyncBlob(
+                for: file,
+                from: stagingURL,
+                blobsURL: blobsURL
+            )
+        }
+
+        let syncManifest = BackupManifest(
+            appName: manifest.appName,
+            schemaVersion: manifest.schemaVersion,
+            createdAt: manifest.createdAt,
+            machineName: manifest.machineName,
+            items: manifest.items,
+            files: syncableFiles,
+            tombstones: manifest.tombstones.filter {
+                SyncPathPolicy.isSyncable($0.backupRelativePath)
+            },
+            warnings: manifest.warnings
+        )
+        let generationFileName = SyncGenerationLayout.generationFileName(now: now)
+        let generationURL = generationsURL.appendingPathComponent(generationFileName)
+        let temporaryGenerationURL = generationsURL
+            .appendingPathComponent(".publish-\(UUID().uuidString).json")
+
+        do {
+            try encoder.encode(syncManifest).write(to: temporaryGenerationURL, options: .atomic)
+            try fileManager.moveItem(at: temporaryGenerationURL, to: generationURL)
+            try pruneSyncGenerations(in: generationsURL, blobsURL: blobsURL)
+        } catch {
+            if fileManager.fileExists(atPath: temporaryGenerationURL.path) {
+                try? fileManager.removeItem(at: temporaryGenerationURL)
+            }
+            throw BackupServiceError.unableToPublishBackup(
+                "Could not publish the committed sync generation: \(error.localizedDescription)"
+            )
+        }
+    }
+
+    private func publishSyncBlob(
+        for file: BackupManifestFile,
+        from stagingURL: URL,
+        blobsURL: URL
+    ) throws {
+        let destinationURL = SyncGenerationLayout.blobURL(for: file.sha256, in: blobsURL)
+        if fileManager.fileExists(atPath: destinationURL.path) {
+            return
+        }
+
+        let sourceURL = stagingURL.appendingRelativePath(file.backupRelativePath)
+        let parentURL = destinationURL.deletingLastPathComponent()
+        let temporaryURL = parentURL.appendingPathComponent(".publish-\(UUID().uuidString)")
+        try fileManager.createDirectory(at: parentURL, withIntermediateDirectories: true)
+
+        do {
+            try fileManager.copyItem(at: sourceURL, to: temporaryURL)
+            try fileManager.moveItem(at: temporaryURL, to: destinationURL)
+        } catch {
+            if fileManager.fileExists(atPath: temporaryURL.path) {
+                try? fileManager.removeItem(at: temporaryURL)
+            }
+            throw error
+        }
+    }
+
+    private func pruneSyncGenerations(in generationsURL: URL, blobsURL: URL) throws {
+        let generationURLs = try fileManager.contentsOfDirectory(
+            at: generationsURL,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        )
+        .filter { $0.pathExtension == "json" }
+        .sorted { $0.lastPathComponent > $1.lastPathComponent }
+
+        let retainedGenerationURLs = Array(
+            generationURLs.prefix(SyncGenerationLayout.retainedGenerationCount)
+        )
+        for generationURL in generationURLs.dropFirst(SyncGenerationLayout.retainedGenerationCount) {
+            try fileManager.removeItem(at: generationURL)
+        }
+
+        var referencedHashes: Set<String> = []
+        for generationURL in retainedGenerationURLs {
+            guard let data = try? Data(contentsOf: generationURL),
+                  let manifest = try? decoder.decode(BackupManifest.self, from: data)
+            else {
+                // A local iCloud placeholder must never make blob cleanup destructive.
+                return
+            }
+            referencedHashes.formUnion(manifest.files.map(\.sha256))
+        }
+
+        guard let shardURLs = try? fileManager.contentsOfDirectory(
+            at: blobsURL,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return
+        }
+
+        for shardURL in shardURLs {
+            guard let blobURLs = try? fileManager.contentsOfDirectory(
+                at: shardURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                continue
+            }
+            for blobURL in blobURLs where !referencedHashes.contains(blobURL.lastPathComponent) {
+                try fileManager.removeItem(at: blobURL)
+            }
+            if (try? fileManager.contentsOfDirectory(atPath: shardURL.path).isEmpty) == true {
+                try fileManager.removeItem(at: shardURL)
+            }
+        }
     }
 
     private func validateDestination(_ destinationURL: URL, isNotInside sourceURL: URL) throws {

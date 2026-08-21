@@ -1,6 +1,7 @@
-# Codex Keep 0.1.48
+# Codex Keep 0.1.49
 
-Keeps deliberately deleted skills deleted while their removal propagates to trusted Macs.
+Makes trusted-Mac skill sync resilient when iCloud exposes a new backup only partially.
 
-- Stops stale peer backups from automatically restoring files covered by a local deletion tombstone.
-- Leaves the deletion available for normal review on the other trusted Mac.
+- Publishes immutable sync generations backed by deduplicated, content-addressed files.
+- Uses the previous complete generation while a newer iCloud generation is unavailable.
+- Detects metadata-only iCloud placeholders, requests their download, and records the waiting state in the diagnostic log.

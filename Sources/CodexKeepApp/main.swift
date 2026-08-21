@@ -1195,7 +1195,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     nonisolated private static func runBackupAndPeerSync(settings: BackupSettings) throws -> BackupAndPeerSyncResult {
         let backupService = BackupService()
-        let peerSyncService = PeerSyncService()
+        let peerSyncService = PeerSyncService(diagnosticLog: Self.logBackupPhase)
         let automationMoveService = AutomationMoveService()
         var workingSettings = settings
         logBackupPhase("Checking pending automation moves")

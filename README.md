@@ -40,8 +40,10 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 
 - Non-conflicting peer creates and updates are selected by default.
 - Automatic trusted-machine sync applies only non-conflicting file creates and updates.
-- Each backup publishes `.codex-keep-payload.zip` next to `manifest.json` so peer sync can recover files even when iCloud has hydrated the manifest before the individual file tree.
-- Automatic trusted-machine sync skips peer files that are still iCloud placeholders, logs their backup paths, shows the skipped count in the menu, and retries them on a later run after requesting the download.
+- Each backup commits an immutable sync-generation manifest only after its content-addressed blobs exist. Readers use the newest readable generation, fall back to the previous complete generation while iCloud catches up, and retain legacy `latest` compatibility for older Codex Keep versions.
+- Content-addressed blobs let the receiving Mac request only the exact changed files instead of downloading the full backup payload. Seven generation manifests are retained, and unreferenced blobs are removed only when every retained manifest is locally readable.
+- Automatic trusted-machine sync recognizes metadata-only iCloud placeholders by their zero allocated size, requests their download, logs the waiting state, and retries without attempting to decode or copy placeholder bytes.
+- Legacy backups still publish `.codex-keep-payload.zip` next to `manifest.json` so upgraded readers can sync from machines that have not published a committed generation yet.
 - Automations are backed up but excluded from trusted-machine sync so scheduled jobs do not run on multiple Macs.
 - Codex app/config sync is limited to `~/.codex/config.toml`; Codex Keep does not sync the Electron app profile, auth files, databases, sessions, logs, or caches.
 - `Sync Local Repo Dev Files` is opt-in. When enabled, Codex Keep backs up supported local-only dev files from discovered Git repositories and syncs them only to trusted Macs that already have the same repository checkout.
@@ -123,9 +125,15 @@ Codex Keep/
       Agents/
       Codex/
       manifest.json
+    Sync/
+      Generations/
+        20260821-130000-000-<uuid>.json
+      Blobs/
+        ab/
+          <sha256>
     Snapshots/
       2026-05-21/
       2026-05-20/
 ```
 
-`latest` is refreshed in place. `Snapshots` keeps the seven newest daily backups.
+`latest` is refreshed in place for backup browsing and compatibility. `Sync/Generations` contains immutable commit manifests, `Sync/Blobs` deduplicates peer-sync content by SHA-256, and `Snapshots` keeps the seven newest daily backups.
