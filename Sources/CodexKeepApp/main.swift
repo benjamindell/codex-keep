@@ -100,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var animationFrame = 0
     private let animationFrames = ["|", "/", "-", "\\"]
     private let minimumSyncIndicatorDuration: TimeInterval = 1.25
-    private let backupTimeoutDuration: TimeInterval = 180
+    private let backupTimeoutDuration: TimeInterval = 10 * 60
     private let repositoryPullIntervalDuration: TimeInterval = 30 * 60
     private let codexAppUpdateHour = 5
 
@@ -850,11 +850,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
 
         let phase = Self.lastBackupLogPhase() ?? currentBackupPhase
-        activeBackupID = nil
         backupTimeoutTimer?.invalidate()
         backupTimeoutTimer = nil
-        stopSyncAnimation()
-        isBackingUp = false
         lastResult = nil
         lastPeerSyncResult = nil
         lastError = CodexKeepAppError.backupTimedOut(phase)
@@ -1195,8 +1192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     nonisolated private static func runBackupAndPeerSync(settings: BackupSettings) throws -> BackupAndPeerSyncResult {
         let backupService = BackupService()
-        let peerSyncService = PeerSyncService(diagnosticLog: Self.logBackupPhase)
-        let automationMoveService = AutomationMoveService()
+        let peerSyncService = PeerSyncService(
+            peerDownloadWaitDuration: 0,
+            diagnosticLog: Self.logBackupPhase
+        )
+        let automationMoveService = AutomationMoveService(moveHydrationTimeout: 0)
         var workingSettings = settings
         logBackupPhase("Checking pending automation moves")
         let automationMoveResult = try automationMoveService.consumePendingMoves(settings: workingSettings)

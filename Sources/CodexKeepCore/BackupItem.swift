@@ -85,6 +85,13 @@ public enum DefaultBackupItems {
                 ]
             ),
             BackupItem(
+                id: "codex-visualizations",
+                displayName: "Codex visualizations",
+                sourcePath: "\(codexHome)/visualizations",
+                destinationPath: "Codex/visualizations",
+                defaultEnabled: false
+            ),
+            BackupItem(
                 id: "agent-skills",
                 displayName: "Agent skills",
                 sourcePath: "\(agentsHome)/skills",
@@ -105,7 +112,12 @@ public enum DefaultBackupItems {
             fileManager: fileManager
         ) + discoveredMarkdownFolders(
             in: codexHomeURL,
-            excluding: Set(explicitItems.map(\.sourcePath)),
+            excluding: Set(explicitItems.map {
+                URL(fileURLWithPath: $0.sourcePath)
+                    .standardizedFileURL
+                    .resolvingSymlinksInPath()
+                    .path
+            }),
             fileManager: fileManager
         )
     }
@@ -154,7 +166,9 @@ public enum DefaultBackupItems {
                 let folderName = directoryURL.lastPathComponent
                 return !folderName.hasPrefix(".")
                     && !excludedFolderNames.contains(folderName)
-                    && !explicitSourcePaths.contains(directoryURL.path)
+                    && !explicitSourcePaths.contains(
+                        directoryURL.standardizedFileURL.resolvingSymlinksInPath().path
+                    )
                     && containsMarkdownFile(in: directoryURL, fileManager: fileManager)
             }
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }

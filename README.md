@@ -19,9 +19,12 @@ The first version is deliberately conservative:
 - `~/.codex/config.toml` to `Codex/config.toml`
 - `~/.codex/rules` to `Codex/rules`
 - `~/.codex/skills` to `Codex/skills`, excluding bundled/system skills
+- Optional `~/.codex/visualizations` to `Codex/visualizations`; generated visualizations are off by default
 - Optional local repo dev files to `Git Repos/<repo identity>`, currently root `.env` and `.env.*` files, `fabfile_local.py`, `local_settings.py`, and `.vscode`
 - Markdown-backed top-level `~/.codex` folders to `Codex/<folder>`, excluding known cache, session, log, plugin, database, and worktree folders
 - `~/.agents/skills` to `Agents/skills`
+
+Generated dependency, build, virtual-environment, and tool-cache folders such as `node_modules`, `build`, `dist`, `.venv`, `__pycache__`, and `.ruff_cache` are excluded wherever they appear in a backup item.
 
 ## Deploying to another Mac
 
@@ -42,7 +45,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 - Automatic trusted-machine sync applies only non-conflicting file creates and updates.
 - Each backup commits an immutable sync-generation manifest only after its content-addressed blobs exist. Readers use the newest readable generation, fall back to the previous complete generation while iCloud catches up, and retain legacy `latest` compatibility for older Codex Keep versions.
 - Content-addressed blobs let the receiving Mac request only the exact changed files instead of downloading the full backup payload. Seven generation manifests are retained, and unreferenced blobs are removed only when every retained manifest is locally readable.
-- Automatic trusted-machine sync recognizes metadata-only iCloud placeholders by their zero allocated size, requests their download, logs the waiting state, and retries without attempting to decode or copy placeholder bytes.
+- Automatic trusted-machine sync recognizes unavailable and metadata-only iCloud content, requests its download, skips it without blocking the scheduled backup, and retries on the next run. Manual peer sync can still wait for iCloud hydration.
 - Legacy backups still publish `.codex-keep-payload.zip` next to `manifest.json` so upgraded readers can sync from machines that have not published a committed generation yet.
 - Automations are backed up but excluded from trusted-machine sync so scheduled jobs do not run on multiple Macs.
 - Codex app/config sync is limited to `~/.codex/config.toml`; Codex Keep does not sync the Electron app profile, auth files, databases, sessions, logs, or caches.
@@ -50,7 +53,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 - Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.
 - Peer deletions require review and create tombstones so the deletion can propagate deliberately.
 - A local tombstone prevents an older peer backup from automatically restoring the deleted file while that review is pending.
-- Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted.
+- Every reviewed or automatic sync writes a safety snapshot under `Sync Safety` before local files are changed or deleted. Backups retain every safety snapshot from the last seven days and at least the newest 20, pruning expired history in bounded batches.
 
 ## Managing automations
 
@@ -60,7 +63,7 @@ The target Mac installs pending incoming moves automatically before its next bac
 
 Each backup run writes phase diagnostics to `~/Library/Logs/Codex Keep/last-run.log` so long-running saves can be traced to the exact step.
 
-If a backup run takes longer than two minutes, Codex Keep stops the menu-bar spinner, reports the last logged phase, and leaves the diagnostic log available from `Open Diagnostic Log`.
+Scheduled runs request unavailable iCloud content and retry it later instead of waiting. If a backup still takes longer than ten minutes, Codex Keep reports the last logged phase but keeps the run active until its worker finishes, preventing overlapping backups and preserving any late successful state.
 
 ## Secondary Machine Mode
 
@@ -136,4 +139,4 @@ Codex Keep/
       2026-05-20/
 ```
 
-`latest` is refreshed in place for backup browsing and compatibility. `Sync/Generations` contains immutable commit manifests, `Sync/Blobs` deduplicates peer-sync content by SHA-256, and `Snapshots` keeps the seven newest daily backups.
+`latest` is refreshed in place for backup browsing and compatibility. `Sync/Generations` contains immutable commit manifests, `Sync/Blobs` deduplicates peer-sync content by SHA-256, and `Snapshots` keeps the seven newest daily backups. Each run also removes expired safety snapshots, incomplete automation moves older than seven days, and managed staging or publish artifacts older than 24 hours.

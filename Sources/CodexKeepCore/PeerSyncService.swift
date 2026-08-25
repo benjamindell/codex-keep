@@ -119,14 +119,17 @@ public final class PeerSyncService {
     private let encoder: JSONEncoder
     private let diagnosticLog: (String) -> Void
     private let manifestWaitDuration: TimeInterval
+    private let peerDownloadWaitDuration: TimeInterval
 
     public init(
         fileManager: FileManager = .default,
         manifestWaitDuration: TimeInterval = 10,
+        peerDownloadWaitDuration: TimeInterval = 120,
         diagnosticLog: @escaping (String) -> Void = { _ in }
     ) {
         self.fileManager = fileManager
         self.manifestWaitDuration = manifestWaitDuration
+        self.peerDownloadWaitDuration = peerDownloadWaitDuration
         self.diagnosticLog = diagnosticLog
         self.decoder = JSONDecoder()
         self.decoder.dateDecodingStrategy = .iso8601
@@ -380,7 +383,7 @@ public final class PeerSyncService {
         var skippedItemCount = 0
         var skippedBackupRelativePaths: [String] = []
         var extractedPayloads: [String: URL] = [:]
-        let peerDownloadDeadline = Date().addingTimeInterval(120)
+        let peerDownloadDeadline = Date().addingTimeInterval(peerDownloadWaitDuration)
         defer {
             for url in extractedPayloads.values {
                 try? fileManager.removeItem(at: url)

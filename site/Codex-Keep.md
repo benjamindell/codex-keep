@@ -1,7 +1,8 @@
-# Codex Keep 0.1.49
+# Codex Keep 0.1.50
 
-Makes trusted-Mac skill sync resilient when iCloud exposes a new backup only partially.
+Keeps scheduled backups moving when iCloud is slow and automatically trims generated or expired backup data.
 
-- Publishes immutable sync generations backed by deduplicated, content-addressed files.
-- Uses the previous complete generation while a newer iCloud generation is unavailable.
-- Detects metadata-only iCloud placeholders, requests their download, and records the waiting state in the diagnostic log.
+- Requests unavailable peer and automation-move content, then retries later instead of blocking a scheduled backup.
+- Extends the backup safeguard to ten minutes while keeping late-running work active until it finishes.
+- Excludes common caches and makes generated visualizations opt-in.
+- Retains seven days of safety history plus at least 20 snapshots, and removes stale staging or incomplete move data.

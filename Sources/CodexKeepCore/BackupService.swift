@@ -43,11 +43,20 @@ public final class BackupService {
         let stagingURL = machineRoot.appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
 
         try fileManager.createDirectory(at: machineRoot, withIntermediateDirectories: true)
+        var warnings: [String] = []
+        do {
+            try BackupRetentionPolicy.pruneMachineRoot(
+                machineRoot,
+                fileManager: fileManager,
+                now: now
+            )
+        } catch {
+            warnings.append("Backup housekeeping could not finish: \(error.localizedDescription)")
+        }
         try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: true)
 
         var manifestItems: [BackupManifestItem] = []
         var manifestFiles: [BackupManifestFile] = []
-        var warnings: [String] = []
 
         for item in items where settings.isEnabled(item) {
             let sourceURL = URL(fileURLWithPath: item.sourcePath).standardizedFileURL

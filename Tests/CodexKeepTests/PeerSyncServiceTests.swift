@@ -506,6 +506,47 @@ import Testing
     ) == generationContent)
 }
 
+@Test func peerSyncCanRequestMissingGenerationBlobWithoutBlockingScheduledBackup() throws {
+    let fixture = try PeerSyncFixture()
+    defer { fixture.cleanUp() }
+
+    let manifest = try readManifest(at: fixture.peerLatest.appendingPathComponent("manifest.json"))
+    let generationFileName = "20260821-130000-000-NEW.json"
+    try installPeerSyncGeneration(
+        fixture: fixture,
+        fileName: generationFileName,
+        manifest: manifest
+    )
+
+    let plans = try fixture.makePlans()
+    let plan = try #require(plans.first)
+    let item = try #require(plan.items.first {
+        $0.backupRelativePath == "Codex/skills/new/SKILL.md"
+    })
+    let blobsURL = try #require(plan.contentStoreURL)
+    let blobURL = SyncGenerationLayout.blobURL(
+        for: try #require(item.peerSHA256),
+        in: blobsURL
+    )
+    try fixture.fileManager.removeItem(at: blobURL)
+
+    let startedAt = Date()
+    let result = try PeerSyncService(
+        fileManager: fixture.fileManager,
+        peerDownloadWaitDuration: 0
+    ).apply(
+        plans: plans,
+        selectedItemIDs: [item.id],
+        settings: fixture.settings,
+        now: Date(timeIntervalSince1970: 101)
+    )
+
+    #expect(Date().timeIntervalSince(startedAt) < 1)
+    #expect(result.appliedItemCount == 0)
+    #expect(result.skippedItemCount == 1)
+    #expect(result.skippedBackupRelativePaths == [item.backupRelativePath])
+}
+
 @Test func peerSyncUsesPreviousCompleteGenerationWhenNewestIsUnavailable() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }

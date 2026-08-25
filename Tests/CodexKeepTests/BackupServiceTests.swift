@@ -9,14 +9,21 @@ import Testing
 
     let codexHome = root.appendingPathComponent(".codex", isDirectory: true)
     let socialPresence = codexHome.appendingPathComponent("social-presence", isDirectory: true)
+    let visualizations = codexHome.appendingPathComponent("visualizations", isDirectory: true)
     let cache = codexHome.appendingPathComponent("cache", isDirectory: true)
     let state = codexHome.appendingPathComponent("state", isDirectory: true)
 
     try fileManager.createDirectory(at: socialPresence, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: visualizations, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: cache, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: state, withIntermediateDirectories: true)
     try "memory".write(
         to: socialPresence.appendingPathComponent("voice-preference-memory.md"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "generated artifact".write(
+        to: visualizations.appendingPathComponent("README.md"),
         atomically: true,
         encoding: .utf8
     )
@@ -31,7 +38,8 @@ import Testing
         encoding: .utf8
     )
 
-    let itemPaths = DefaultBackupItems.items(homeDirectory: root).map(\.sourcePath)
+    let items = DefaultBackupItems.items(homeDirectory: root)
+    let itemPaths = items.map(\.sourcePath)
 
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/automations") })
     #expect(itemPaths.contains { $0.hasSuffix("/.codex/AGENTS.md") })
@@ -40,6 +48,10 @@ import Testing
     #expect(itemPaths.contains { $0.hasSuffix("/.aws/credentials") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/cache") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/state") })
+    let visualizationItem = try #require(items.first { $0.id == "codex-visualizations" })
+    #expect(visualizationItem.sourcePath.hasSuffix("/.codex/visualizations"))
+    #expect(visualizationItem.defaultEnabled == false)
+    #expect(!items.contains { $0.id == "codex-markdown-visualizations" })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/auth.json") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/sessions") })
     #expect(!itemPaths.contains { $0.hasSuffix("/.codex/logs_2.sqlite") })
@@ -178,6 +190,10 @@ import Testing
     let systemSkill = skills.appendingPathComponent(".system", isDirectory: true)
     let customSkill = skills.appendingPathComponent("custom-skill", isDirectory: true)
     let customSkillNodeModules = customSkill.appendingPathComponent("node_modules/playwright-core", isDirectory: true)
+    let customSkillPythonCache = customSkill.appendingPathComponent("scripts/__pycache__", isDirectory: true)
+    let customSkillRuffCache = customSkill.appendingPathComponent("scripts/.ruff_cache/0.14.0", isDirectory: true)
+    let customSkillVirtualEnvironment = customSkill.appendingPathComponent(".venv/lib", isDirectory: true)
+    let customSkillBuild = customSkill.appendingPathComponent("build", isDirectory: true)
     let agentSkill = agentsHome.appendingPathComponent("skills/marketing-skill", isDirectory: true)
     let destination = root.appendingPathComponent("Backup", isDirectory: true)
 
@@ -187,6 +203,10 @@ import Testing
     try fileManager.createDirectory(at: systemSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: customSkill, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: customSkillNodeModules, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: customSkillPythonCache, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: customSkillRuffCache, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: customSkillVirtualEnvironment, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: customSkillBuild, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: agentSkill, withIntermediateDirectories: true)
 
     try "automation".write(
@@ -239,6 +259,26 @@ import Testing
         atomically: true,
         encoding: .utf8
     )
+    try "bytecode".write(
+        to: customSkillPythonCache.appendingPathComponent("worker.cpython-314.pyc"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "cache".write(
+        to: customSkillRuffCache.appendingPathComponent("lint-cache"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "environment".write(
+        to: customSkillVirtualEnvironment.appendingPathComponent("dependency.py"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try "build output".write(
+        to: customSkillBuild.appendingPathComponent("artifact.js"),
+        atomically: true,
+        encoding: .utf8
+    )
     try "agent skill".write(
         to: agentSkill.appendingPathComponent("SKILL.md"),
         atomically: true,
@@ -276,6 +316,10 @@ import Testing
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/memory.md.tmp").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/.system/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/node_modules/playwright-core/cli.js").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/scripts/__pycache__/worker.cpython-314.pyc").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/scripts/.ruff_cache/0.14.0/lint-cache").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/.venv/lib/dependency.py").path))
+    #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/skills/custom-skill/build/artifact.js").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Agents/skills/marketing-skill/SKILL.md").path))
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: ".codex").path))
     #expect(fileManager.fileExists(atPath: latest.appendingPathComponent("manifest.json").path))
@@ -285,6 +329,8 @@ import Testing
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".DS_Store") })
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".tmp") })
     #expect(!result.manifest.files.contains { $0.backupRelativePath.contains("/.git/") })
+    #expect(!result.manifest.files.contains { $0.backupRelativePath.contains("/__pycache__/") })
+    #expect(!result.manifest.files.contains { $0.backupRelativePath.contains("/.ruff_cache/") })
 
     let extractedArchive = root.appendingPathComponent("Extracted", isDirectory: true)
     try PayloadArchive.extract(
