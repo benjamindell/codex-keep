@@ -95,12 +95,6 @@ public struct PeerSyncPlanItem: Equatable, Identifiable, Sendable {
     public var needsReview: Bool {
         status == .conflict || status == .peerDeletedReviewRequired
     }
-
-    public var replacesLocalWhenReviewed: Bool {
-        status == .conflict
-            && peerSHA256 != nil
-            && backupRelativePath == "Codex/config.toml"
-    }
 }
 
 public struct PeerSyncApplyResult: Equatable, Sendable {
@@ -274,9 +268,7 @@ public final class PeerSyncService {
             }
 
             for tombstone in peerTombstones.values where peerFiles[tombstone.backupRelativePath] == nil {
-                guard isSyncableBackupPath(tombstone.backupRelativePath),
-                      shouldSyncPeerDeletion(backupRelativePath: tombstone.backupRelativePath)
-                else {
+                guard isSyncableBackupPath(tombstone.backupRelativePath) else {
                     continue
                 }
 
@@ -431,29 +423,13 @@ public final class PeerSyncService {
                             continue
                         }
 
-                        if item.replacesLocalWhenReviewed {
-                            try replaceFile(from: sourceURL, to: URL(fileURLWithPath: item.targetPath))
-                            try verifyReplacement(
-                                targetURL: URL(fileURLWithPath: item.targetPath),
-                                expectedSHA256: item.peerSHA256,
-                                backupRelativePath: item.backupRelativePath
-                            )
-                            updatedSettings.syncStates[item.backupRelativePath] = SyncFileState(
-                                sha256: item.peerSHA256,
-                                updatedAt: now,
-                                machineName: plan.peerName
-                            )
-                            updatedSettings.syncTombstones.removeValue(forKey: item.backupRelativePath)
-                            appliedItemCount += 1
-                        } else {
-                            try copyConflictFile(
-                                from: sourceURL,
-                                beside: URL(fileURLWithPath: item.targetPath),
-                                peerName: plan.peerName,
-                                now: now
-                            )
-                            conflictCopyCount += 1
-                        }
+                        try copyConflictFile(
+                            from: sourceURL,
+                            beside: URL(fileURLWithPath: item.targetPath),
+                            peerName: plan.peerName,
+                            now: now
+                        )
+                        conflictCopyCount += 1
                     case .peerDeletedReviewRequired:
                         let targetURL = URL(fileURLWithPath: item.targetPath)
                         if fileManager.fileExists(atPath: targetURL.path) {
@@ -707,10 +683,6 @@ public final class PeerSyncService {
 
     private func shouldReviewPeerDeletion(syncedState: SyncFileState?) -> Bool {
         syncedState?.sha256 != nil
-    }
-
-    private func shouldSyncPeerDeletion(backupRelativePath: String) -> Bool {
-        backupRelativePath != "Codex/config.toml"
     }
 
     private func isSyncableBackupPath(_ backupRelativePath: String) -> Bool {

@@ -16,7 +16,7 @@ import Testing
     #expect(items["Codex/skills/conflict/SKILL.md"]?.status == .conflict)
     #expect(items["Codex/skills/local-only/SKILL.md"]?.status == .localChanged)
     #expect(items["Codex/skills/deleted/SKILL.md"]?.status == .peerDeletedReviewRequired)
-    #expect(items["Codex/config.toml"]?.status == .incomingChanged)
+    #expect(items["Codex/config.toml"] == nil)
     #expect(items["Codex/skills/shared/.DS_Store"] == nil)
     #expect(items["Codex/skills/shared/memory.md.tmp"] == nil)
     #expect(items["Codex/automations/daily-report/automation.toml"] == nil)
@@ -47,12 +47,12 @@ import Testing
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/shared/README.md"), encoding: .utf8) == "peer readme")
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/new/SKILL.md"), encoding: .utf8) == "peer new")
     #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/skills/conflict/SKILL.md"), encoding: .utf8) == "local conflict")
-    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/config.toml"), encoding: .utf8) == "model = \"peer\"")
+    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/config.toml"), encoding: .utf8) == "model = \"base\"")
     #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/deleted/SKILL.md").path))
     #expect(fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/skills/conflict/SKILL.conflict-Peer-Mac-19700101-010000.md").path))
     #expect(fixture.fileManager.fileExists(atPath: result.safetySnapshotURL.appendingPathComponent("manifest.json").path))
     #expect(result.updatedSettings.syncStates["Codex/skills/shared/SKILL.md"]?.sha256 == sha256("peer update"))
-    #expect(result.updatedSettings.syncStates["Codex/config.toml"]?.sha256 == sha256("model = \"peer\""))
+    #expect(result.updatedSettings.syncStates["Codex/config.toml"]?.sha256 == sha256("model = \"base\""))
     #expect(result.updatedSettings.syncStates["Codex/skills/deleted/SKILL.md"]?.sha256 == nil)
     #expect(result.updatedSettings.syncTombstones["Codex/skills/deleted/SKILL.md"] != nil)
 }
@@ -99,31 +99,13 @@ import Testing
     #expect(!fixture.fileManager.fileExists(atPath: deletedURL.path))
 }
 
-@Test func reviewedConfigConflictReplacesLocalConfigAndRecordsSyncState() throws {
+@Test func peerSyncIgnoresConfigFromLegacyManifest() throws {
     let fixture = try PeerSyncFixture()
     defer { fixture.cleanUp() }
 
-    fixture.settings.syncStates.removeValue(forKey: "Codex/config.toml")
-
     let plans = try fixture.makePlans()
-    let item = try #require(plans.flatMap(\.items).first {
-        $0.backupRelativePath == "Codex/config.toml"
-    })
-    #expect(item.status == .conflict)
-    #expect(item.replacesLocalWhenReviewed)
-
-    let result = try PeerSyncService(fileManager: fixture.fileManager).apply(
-        plans: plans,
-        selectedItemIDs: [item.id],
-        settings: fixture.settings,
-        now: Date(timeIntervalSince1970: 0)
-    )
-
-    #expect(result.appliedItemCount == 1)
-    #expect(result.conflictCopyCount == 0)
-    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/config.toml"), encoding: .utf8) == "model = \"peer\"")
-    #expect(!fixture.fileManager.fileExists(atPath: fixture.home.appending(relativePath: ".codex/config.conflict-Peer-Mac-19700101-010000.toml").path))
-    #expect(result.updatedSettings.syncStates["Codex/config.toml"]?.sha256 == sha256("model = \"peer\""))
+    #expect(!plans.flatMap(\.items).contains { $0.backupRelativePath == "Codex/config.toml" })
+    #expect(try String(contentsOf: fixture.home.appending(relativePath: ".codex/config.toml"), encoding: .utf8) == "model = \"base\"")
 }
 
 @Test func peerSyncSkipsManifestFilesMissingAtApplyTime() throws {

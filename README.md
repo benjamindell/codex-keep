@@ -48,7 +48,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 - Automatic trusted-machine sync recognizes unavailable and metadata-only iCloud content, requests its download, skips it without blocking the scheduled backup, and retries on the next run. Manual peer sync can still wait for iCloud hydration.
 - Legacy backups still publish `.codex-keep-payload.zip` next to `manifest.json` so upgraded readers can sync from machines that have not published a committed generation yet.
 - Automations are backed up but excluded from trusted-machine sync so scheduled jobs do not run on multiple Macs.
-- Codex app/config sync is limited to `~/.codex/config.toml`; Codex Keep does not sync the Electron app profile, auth files, databases, sessions, logs, or caches.
+- `~/.codex/config.toml` stays in backups for manual restore but is excluded from trusted-machine sync because it can contain machine-specific project paths and settings. Codex Keep does not sync the Electron app profile, auth files, databases, sessions, logs, or caches.
 - `Sync Local Repo Dev Files` is opt-in. When enabled, Codex Keep backs up supported local-only dev files from discovered Git repositories and syncs them only to trusted Macs that already have the same repository checkout.
 - Conflicts are never overwritten automatically; reviewing a conflict saves the peer copy beside the local file with a `.conflict-<machine>-<timestamp>` suffix.
 - Peer deletions require review and create tombstones so the deletion can propagate deliberately.

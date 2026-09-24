@@ -214,6 +214,11 @@ import Testing
         atomically: true,
         encoding: .utf8
     )
+    try "model = \"local\"".write(
+        to: codexHome.appendingPathComponent("config.toml"),
+        atomically: true,
+        encoding: .utf8
+    )
     try "generated".write(
         to: automations.appendingPathComponent(".run-jitter-salt"),
         atomically: true,
@@ -289,6 +294,7 @@ import Testing
         destinationRootPath: destination.path,
         enabledItemIDs: [
             "codex-automations",
+            "codex-config",
             "codex-skills",
             "agent-skills",
             "codex-markdown-social-presence",
@@ -307,6 +313,8 @@ import Testing
     let snapshot = machineRoot.appending(relativePath: "Snapshots/1970-01-01")
 
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/automation.toml").path))
+    #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/config.toml").path))
+    #expect(result.manifest.files.contains { $0.backupRelativePath == "Codex/config.toml" })
     #expect(!fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/automations/.run-jitter-salt").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/social-presence/social-log.md").path))
     #expect(fileManager.fileExists(atPath: latest.appending(relativePath: "Codex/memories/memory_summary.md").path))
@@ -325,6 +333,7 @@ import Testing
     #expect(fileManager.fileExists(atPath: latest.appendingPathComponent("manifest.json").path))
     #expect(fileManager.fileExists(atPath: latest.appendingPathComponent(PayloadArchive.fileName).path))
     #expect(fileManager.fileExists(atPath: snapshot.appending(relativePath: "Codex/automations/automation.toml").path))
+    #expect(fileManager.fileExists(atPath: snapshot.appending(relativePath: "Codex/config.toml").path))
     #expect(fileManager.fileExists(atPath: snapshot.appendingPathComponent(PayloadArchive.fileName).path))
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".DS_Store") })
     #expect(!result.manifest.files.contains { $0.backupRelativePath.hasSuffix(".tmp") })
@@ -338,6 +347,7 @@ import Testing
         to: extractedArchive
     )
     #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/skills/custom-skill/SKILL.md").path))
+    #expect(fileManager.fileExists(atPath: extractedArchive.appending(relativePath: "Codex/config.toml").path))
 
     let generationURLs = try fileManager.contentsOfDirectory(
         at: SyncGenerationLayout.generationsURL(in: machineRoot),
@@ -355,6 +365,9 @@ import Testing
     })
     #expect(!syncManifest.files.contains {
         $0.backupRelativePath.hasPrefix("Codex/automations/")
+    })
+    #expect(!syncManifest.files.contains {
+        $0.backupRelativePath == "Codex/config.toml"
     })
     let skillFile = try #require(syncManifest.files.first {
         $0.backupRelativePath == "Codex/skills/custom-skill/SKILL.md"

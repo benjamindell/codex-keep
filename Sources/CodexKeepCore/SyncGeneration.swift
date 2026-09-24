@@ -4,6 +4,7 @@ enum SyncPathPolicy {
     static func isSyncable(_ backupRelativePath: String) -> Bool {
         !backupRelativePath.hasPrefix("Codex/automations/")
             && backupRelativePath != "Codex/automations"
+            && backupRelativePath != "Codex/config.toml"
             && !BackupPathFilter.shouldExclude(relativePath: backupRelativePath)
     }
 }

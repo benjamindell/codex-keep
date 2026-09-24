@@ -1591,7 +1591,7 @@ private struct PeerSyncReviewView: View {
 
                 Text("\(item.backupRelativePath) - \(statusText(for: item))")
                     .font(.caption)
-                    .foregroundStyle(item.replacesLocalWhenReviewed ? .primary : .secondary)
+                    .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .truncationMode(.middle)
 
@@ -1666,7 +1666,7 @@ private struct PeerSyncReviewView: View {
         case .incomingChanged:
             "changed on \(item.peerName)"
         case .conflict:
-            item.replacesLocalWhenReviewed ? "replace local after review" : item.peerSHA256 == nil ? "delete conflict" : "save peer conflict copy"
+            item.peerSHA256 == nil ? "delete conflict" : "save peer conflict copy"
         case .peerDeletedReviewRequired:
             "delete requested by \(item.peerName)"
         case .unchanged:
