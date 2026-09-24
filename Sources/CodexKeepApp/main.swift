@@ -64,7 +64,6 @@ private extension CodexAppUpdateService.UpdateResult {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settingsStore = SettingsStore()
     private let backupService = BackupService()
-    private let deployService = DeployService()
     private let peerSyncService = PeerSyncService()
     private let automationMoveService = AutomationMoveService()
     private let codexAppUpdateService = CodexAppUpdateService()
@@ -94,6 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastError: Error?
     private weak var statusMenuItem: NSMenuItem?
     private var isBackingUp = false
+    private var isDeploying = false
+    private var deployPhase = ""
     private var isPullingRepositories = false
     private var activeBackupID: UUID?
     private var currentBackupPhase = "starting backup"
@@ -201,11 +202,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(status)
         menu.addItem(.separator())
 
-        menu.addItem(actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b"))
+        let backUpNowItem = actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b")
+        backUpNowItem.isEnabled = !isDeploying
+        menu.addItem(backUpNowItem)
         menu.addItem(actionItem(title: "Review Peer Changes...", action: #selector(reviewPeerChanges), keyEquivalent: "r"))
         menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
         menu.addItem(actionItem(title: "Open Diagnostic Log", action: #selector(openDiagnosticLog), keyEquivalent: "l"))
-        menu.addItem(actionItem(title: "Deploy Backup to This Mac...", action: #selector(deployBackupToThisMac), keyEquivalent: "d"))
+        let deployItem = actionItem(title: "Deploy Backup to This Mac...", action: #selector(deployBackupToThisMac), keyEquivalent: "d")
+        deployItem.isEnabled = !isDeploying && !isBackingUp
+        menu.addItem(deployItem)
         menu.addItem(actionItem(title: "Trusted Machines...", action: #selector(configureTrustedMachines), keyEquivalent: "t"))
         menu.addItem(actionItem(title: "Manage Automations...", action: #selector(manageAutomations), keyEquivalent: "m"))
         menu.addItem(autoSyncItem())
@@ -266,6 +271,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func statusTitle() -> String {
+        if isDeploying {
+            return deployPhase
+        }
+
         if isBackingUp {
             return "Saving: \(currentBackupPhase)"
         }
@@ -437,6 +446,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func deployBackupToThisMac() {
+        guard !isDeploying && !isBackingUp else {
+            return
+        }
+
         let panel = NSOpenPanel()
         panel.title = "Choose Codex Keep Backup"
         panel.prompt = "Review"
@@ -451,23 +464,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return
         }
 
-        do {
-            let sourceURL = normalizedBackupSourceURL(from: selectedURL)
-            let plan = try deployService.makePlan(sourceURL: sourceURL)
-            guard let selectedItemIDs = presentDeployPlan(plan) else {
-                return
+        let sourceURL = normalizedBackupSourceURL(from: selectedURL)
+        isDeploying = true
+        deployPhase = "Reading restore snapshot"
+        updateStatusItemForDeploy()
+        rebuildMenu()
+
+        Task.detached {
+            let planResult = Result {
+                try DeployService().makePlan(sourceURL: sourceURL)
             }
 
-            let result = try deployService.deploy(
-                plan: plan,
-                selectedItemIDs: selectedItemIDs,
-                settings: settingsStore.settings
-            )
-            presentDeploySuccess(result)
-        } catch {
-            lastError = error
-            presentError(error, messageText: "Codex Keep could not deploy the backup.")
+            await MainActor.run {
+                switch planResult {
+                case let .failure(error):
+                    self.finishDeploy()
+                    self.lastError = error
+                    self.presentError(error, messageText: "Codex Keep could not review the backup.")
+                case let .success(plan):
+                    self.deployPhase = "Reviewing restore"
+                    self.rebuildMenu()
+                    guard let selectedItemIDs = self.presentDeployPlan(plan) else {
+                        self.finishDeploy()
+                        return
+                    }
+
+                    self.deployPhase = "Restoring \(selectedItemIDs.count) items"
+                    self.updateStatusItemForDeploy()
+                    self.rebuildMenu()
+                    let settings = self.settingsStore.settings
+                    Task.detached {
+                        let deployResult = Result {
+                            try DeployService().deploy(
+                                plan: plan,
+                                selectedItemIDs: selectedItemIDs,
+                                settings: settings
+                            )
+                        }
+
+                        await MainActor.run {
+                            self.finishDeploy()
+                            switch deployResult {
+                            case let .success(result):
+                                self.presentDeploySuccess(result)
+                            case let .failure(error):
+                                self.lastError = error
+                                self.presentError(error, messageText: "Codex Keep could not deploy the backup.")
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private func finishDeploy() {
+        isDeploying = false
+        deployPhase = ""
+        if !isBackingUp && !isPullingRepositories {
+            restoreDefaultStatusItem()
+        }
+        rebuildMenu()
+    }
+
+    private func updateStatusItemForDeploy() {
+        guard let button = statusItem.button else {
+            return
+        }
+
+        button.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: "Restoring backup")
+        button.image?.isTemplate = true
+        button.title = "Restoring"
     }
 
     @objc private func manageAutomations() {
@@ -763,7 +830,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func runBackup() {
-        guard !isBackingUp else {
+        guard !isBackingUp && !isDeploying else {
             return
         }
 

@@ -115,16 +115,19 @@ public final class DeployService {
                     continue
                 }
 
-                planItems.append(try planItem(
+                let targetURL = homeDirectory
+                    .appendingPathComponent(".codex", isDirectory: true)
+                    .appendingPathComponent("automations", isDirectory: true)
+                    .appendingPathComponent(automationID, isDirectory: true)
+                planItems.append(DeployPlanItem(
                     id: manifestItem.id,
                     parentID: "codex-automations",
                     displayName: manifestItem.displayName,
                     sourceRelativePath: "Codex/automations/\(automationID)",
-                    targetURL: homeDirectory
-                        .appendingPathComponent(".codex", isDirectory: true)
-                        .appendingPathComponent("automations", isDirectory: true)
-                        .appendingPathComponent(automationID, isDirectory: true),
-                    sourceRootURL: standardizedSourceURL
+                    targetPath: targetURL.standardizedFileURL.path,
+                    status: fileManager.fileExists(atPath: targetURL.path) ? .changed : .new,
+                    fileCount: manifestItem.fileCount,
+                    byteCount: manifestItem.byteCount
                 ))
                 continue
             }

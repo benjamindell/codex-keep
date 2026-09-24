@@ -173,6 +173,44 @@ import Testing
     #expect(try String(contentsOf: localAutomation.appendingPathComponent("automation.toml"), encoding: .utf8) == "old")
 }
 
+@Test func deployPlanUsesMoveManifestWhileAutomationFilesAreUnavailable() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let snapshot = root.appending(relativePath: "Backup/Mac/Automation Move Safety/snapshot")
+    try fileManager.createDirectory(at: snapshot, withIntermediateDirectories: true)
+    let manifest = BackupManifest(
+        appName: "Codex Keep Automation Move Safety",
+        schemaVersion: 1,
+        createdAt: Date(timeIntervalSince1970: 0),
+        machineName: "Mac",
+        items: [BackupManifestItem(
+            id: "codex-automations/daily-report",
+            displayName: "Automation: daily-report",
+            sourcePath: "/old-home/.codex/automations/daily-report",
+            destinationPath: snapshot.appending(relativePath: "Codex/automations/daily-report").path,
+            status: .copied,
+            fileCount: 5000,
+            byteCount: 1000000,
+            message: nil
+        )],
+        warnings: []
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(manifest).write(to: snapshot.appendingPathComponent("manifest.json"))
+
+    let plan = try DeployService(fileManager: fileManager).makePlan(
+        sourceURL: snapshot,
+        homeDirectory: root.appendingPathComponent("Home")
+    )
+    #expect(plan.items.count == 1)
+    #expect(plan.items[0].status == .new)
+    #expect(plan.items[0].fileCount == 5000)
+    #expect(plan.items[0].byteCount == 1000000)
+}
+
 private func writeManifest(to backupURL: URL) throws {
     let manifest = BackupManifest(
         appName: "Codex Keep",

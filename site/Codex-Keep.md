@@ -1,7 +1,6 @@
-# Codex Keep 0.1.51
+# Codex Keep 0.1.52
 
-Prevents incomplete automation moves and makes their safety snapshots usable for recovery.
+Opens automation move recovery promptly and keeps Codex Keep responsive while iCloud files are restored.
 
-- Checks that incoming automation files match the move manifest before installing them.
-- Keeps incomplete moves pending until their files or archive are available.
-- Lets you restore a fully downloaded Automation Move Safety snapshot through Deploy Backup to This Mac.
+- Builds the recovery review from the snapshot manifest without scanning its files.
+- Checks and restores the selected automations in the background.
