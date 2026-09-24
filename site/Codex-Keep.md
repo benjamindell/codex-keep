@@ -1,8 +1,7 @@
-# Codex Keep 0.1.50
+# Codex Keep 0.1.51
 
-Keeps scheduled backups moving when iCloud is slow and automatically trims generated or expired backup data.
+Prevents incomplete automation moves and makes their safety snapshots usable for recovery.
 
-- Requests unavailable peer and automation-move content, then retries later instead of blocking a scheduled backup.
-- Extends the backup safeguard to ten minutes while keeping late-running work active until it finishes.
-- Excludes common caches and makes generated visualizations opt-in.
-- Retains seven days of safety history plus at least 20 snapshots, and removes stale staging or incomplete move data.
+- Checks that incoming automation files match the move manifest before installing them.
+- Keeps incomplete moves pending until their files or archive are available.
+- Lets you restore the automations in an Automation Move Safety snapshot through Deploy Backup to This Mac.

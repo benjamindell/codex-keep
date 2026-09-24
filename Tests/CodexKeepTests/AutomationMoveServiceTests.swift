@@ -98,6 +98,10 @@ import Testing
     try PayloadArchive.create(contentsOf: packageRoot, archiveURL: temporaryPayloadURL)
 
     try fileManager.createDirectory(at: moveURL, withIntermediateDirectories: true)
+    try fileManager.createDirectory(
+        at: moveURL.appending(relativePath: "Automations/daily-report"),
+        withIntermediateDirectories: true
+    )
     try fileManager.copyItem(at: packageRoot.appendingPathComponent("manifest.json"), to: moveURL.appendingPathComponent("manifest.json"))
     try fileManager.copyItem(at: temporaryPayloadURL, to: payloadURL)
 
@@ -112,6 +116,37 @@ import Testing
     #expect(result.consumedMoveCount == 1)
     #expect(!fileManager.fileExists(atPath: moveURL.path))
     #expect(try String(contentsOf: localDaily.appendingPathComponent("automation.toml"), encoding: .utf8) == "new")
+}
+
+@Test func automationMoveConsumeKeepsIncompleteMovePending() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let destinationRoot = root.appendingPathComponent("Codex Keep", isDirectory: true)
+    let moveURL = destinationRoot.appending(relativePath: "\(Machine.currentName())/Automation Moves/move-1")
+    let incompleteAutomation = moveURL.appending(relativePath: "Automations/daily-report")
+    let localDaily = home.appending(relativePath: ".codex/automations/daily-report")
+
+    try fileManager.createDirectory(at: incompleteAutomation, withIntermediateDirectories: true)
+    try "new".write(
+        to: incompleteAutomation.appendingPathComponent("automation.toml"),
+        atomically: true,
+        encoding: .utf8
+    )
+    try writeMoveManifest(to: moveURL, targetMachineName: Machine.currentName(), fileCount: 2)
+
+    let result = try AutomationMoveService(fileManager: fileManager).consumePendingMoves(
+        settings: BackupSettings(destinationRootPath: destinationRoot.path, enabledItemIDs: []),
+        homeDirectory: home,
+        now: Date(timeIntervalSince1970: 0)
+    )
+
+    #expect(result.installedCount == 0)
+    #expect(result.consumedMoveCount == 0)
+    #expect(fileManager.fileExists(atPath: moveURL.path))
+    #expect(!fileManager.fileExists(atPath: localDaily.path))
 }
 
 @Test func automationMoveConsumeIgnoresAutomationFoldersNotListedInManifest() throws {
@@ -131,7 +166,7 @@ import Testing
     try fileManager.createDirectory(at: moveWeekly, withIntermediateDirectories: true)
     try "daily".write(to: moveDaily.appendingPathComponent("automation.toml"), atomically: true, encoding: .utf8)
     try "weekly".write(to: moveWeekly.appendingPathComponent("automation.toml"), atomically: true, encoding: .utf8)
-    try writeMoveManifest(to: moveURL, targetMachineName: Machine.currentName())
+    try writeMoveManifest(to: moveURL, targetMachineName: Machine.currentName(), byteCount: 5)
 
     let service = AutomationMoveService(fileManager: fileManager)
     let result = try service.consumePendingMoves(
@@ -173,13 +208,18 @@ import Testing
     #expect(!fileManager.fileExists(atPath: localDaily.path))
 }
 
-private func writeMoveManifest(to moveURL: URL, targetMachineName: String) throws {
+private func writeMoveManifest(
+    to moveURL: URL,
+    targetMachineName: String,
+    fileCount: Int = 1,
+    byteCount: UInt64 = 3
+) throws {
     let manifest = AutomationMoveManifest(
         createdAt: Date(timeIntervalSince1970: 0),
         sourceMachineName: "Source-Mac",
         targetMachineName: targetMachineName,
         automations: [
-            AutomationMoveManifestItem(id: "daily-report", fileCount: 1, byteCount: 3)
+            AutomationMoveManifestItem(id: "daily-report", fileCount: fileCount, byteCount: byteCount)
         ]
     )
 

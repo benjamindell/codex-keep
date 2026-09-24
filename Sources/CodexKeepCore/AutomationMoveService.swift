@@ -307,7 +307,9 @@ public final class AutomationMoveService {
             var installedCount = 0
             for (sourceURL, targetURL) in targetURLs {
                 guard fileManager.fileExists(atPath: sourceURL.path) else {
-                    continue
+                    throw AutomationMoveServiceError.unableToInstall(
+                        "Automation \(sourceURL.lastPathComponent) is no longer available in the move package."
+                    )
                 }
 
                 try replaceItem(from: sourceURL, to: targetURL)
@@ -391,12 +393,19 @@ public final class AutomationMoveService {
                 .appendingPathComponent(item.id, isDirectory: true)
 
             try? fileManager.startDownloadingUbiquitousItem(at: automationURL)
-            return directoryIsReadyForImmediateRead(automationURL)
+            return directoryIsReadyForImmediateRead(automationURL, expected: item)
         }
     }
 
-    private func directoryIsReadyForImmediateRead(_ url: URL) -> Bool {
-        guard fileManager.fileExists(atPath: url.path) else {
+    private func directoryIsReadyForImmediateRead(
+        _ url: URL,
+        expected: AutomationMoveManifestItem
+    ) -> Bool {
+        let configurationURL = url.appendingPathComponent("automation.toml")
+        try? fileManager.startDownloadingUbiquitousItem(at: configurationURL)
+        guard fileManager.fileExists(atPath: configurationURL.path),
+              isReadyForImmediateRead(configurationURL)
+        else {
             return false
         }
 
@@ -404,16 +413,21 @@ public final class AutomationMoveService {
             at: url,
             includingPropertiesForKeys: [
                 .isRegularFileKey,
+                .fileSizeKey,
                 .isUbiquitousItemKey,
                 .ubiquitousItemDownloadingStatusKey
             ],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
-            return true
+            return false
         }
 
+        var stats = AutomationMoveCopyStats()
         for case let childURL as URL in enumerator {
-            guard (try? childURL.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
+            guard let values = try? childURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]) else {
+                return false
+            }
+            guard values.isRegularFile == true else {
                 continue
             }
 
@@ -421,9 +435,11 @@ public final class AutomationMoveService {
             guard isReadyForImmediateRead(childURL) else {
                 return false
             }
+            stats.fileCount += 1
+            stats.byteCount += UInt64(values.fileSize ?? 0)
         }
 
-        return true
+        return stats.fileCount == expected.fileCount && stats.byteCount == expected.byteCount
     }
 
     private func prepareMoveForConsumption(moveURL: URL, waitUntil deadline: Date) throws -> PreparedAutomationMove? {

@@ -103,6 +103,32 @@ public final class DeployService {
         var warnings = manifest.warnings
 
         for manifestItem in copiedManifestItems {
+            if manifest.appName == "Codex Keep Automation Move Safety",
+               manifestItem.id.hasPrefix("codex-automations/") {
+                let automationID = String(manifestItem.id.dropFirst("codex-automations/".count))
+                guard !automationID.isEmpty,
+                      automationID != ".",
+                      automationID != "..",
+                      !automationID.contains("/")
+                else {
+                    warnings.append("\(manifestItem.displayName) has an invalid automation ID.")
+                    continue
+                }
+
+                planItems.append(try planItem(
+                    id: manifestItem.id,
+                    parentID: "codex-automations",
+                    displayName: manifestItem.displayName,
+                    sourceRelativePath: "Codex/automations/\(automationID)",
+                    targetURL: homeDirectory
+                        .appendingPathComponent(".codex", isDirectory: true)
+                        .appendingPathComponent("automations", isDirectory: true)
+                        .appendingPathComponent(automationID, isDirectory: true),
+                    sourceRootURL: standardizedSourceURL
+                ))
+                continue
+            }
+
             guard let backupItem = restoreItemsByID[manifestItem.id] else {
                 warnings.append("\(manifestItem.displayName) is not recognized by this version of Codex Keep.")
                 continue
