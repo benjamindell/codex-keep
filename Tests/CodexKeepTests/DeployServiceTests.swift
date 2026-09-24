@@ -126,6 +126,53 @@ import Testing
     #expect(!fileManager.fileExists(atPath: home.appending(relativePath: ".codex/automations/not-listed").path))
 }
 
+@Test func deployKeepsLocalAutomationWhenMoveSafetySnapshotIsIncomplete() throws {
+    let fileManager = FileManager.default
+    let root = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fileManager.removeItem(at: root) }
+
+    let home = root.appendingPathComponent("Home", isDirectory: true)
+    let snapshot = root.appending(relativePath: "Backup/Mac/Automation Move Safety/snapshot")
+    let backupAutomation = snapshot.appending(relativePath: "Codex/automations/daily-report")
+    let localAutomation = home.appending(relativePath: ".codex/automations/daily-report")
+    try fileManager.createDirectory(at: backupAutomation, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: localAutomation, withIntermediateDirectories: true)
+    try "new".write(to: backupAutomation.appendingPathComponent("automation.toml"), atomically: true, encoding: .utf8)
+    try "old".write(to: localAutomation.appendingPathComponent("automation.toml"), atomically: true, encoding: .utf8)
+
+    let manifest = BackupManifest(
+        appName: "Codex Keep Automation Move Safety",
+        schemaVersion: 1,
+        createdAt: Date(timeIntervalSince1970: 0),
+        machineName: "Mac",
+        items: [BackupManifestItem(
+            id: "codex-automations/daily-report",
+            displayName: "Automation: daily-report",
+            sourcePath: "/old-home/.codex/automations/daily-report",
+            destinationPath: backupAutomation.path,
+            status: .copied,
+            fileCount: 2,
+            byteCount: 6,
+            message: nil
+        )],
+        warnings: []
+    )
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    try encoder.encode(manifest).write(to: snapshot.appendingPathComponent("manifest.json"))
+
+    let service = DeployService(fileManager: fileManager)
+    let plan = try service.makePlan(sourceURL: snapshot, homeDirectory: home)
+    #expect(throws: DeployServiceError.self) {
+        try service.deploy(
+            plan: plan,
+            selectedItemIDs: ["codex-automations/daily-report"],
+            settings: BackupSettings(destinationRootPath: root.appendingPathComponent("Codex Keep").path, enabledItemIDs: [])
+        )
+    }
+    #expect(try String(contentsOf: localAutomation.appendingPathComponent("automation.toml"), encoding: .utf8) == "old")
+}
+
 private func writeManifest(to backupURL: URL) throws {
     let manifest = BackupManifest(
         appName: "Codex Keep",

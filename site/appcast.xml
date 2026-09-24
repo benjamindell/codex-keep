@@ -11,7 +11,7 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <sparkle:releaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:releaseNotesLink>
-            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1611197" type="application/octet-stream" sparkle:edSignature="C5IPKdtPXAcbNXVT/Lfa7D3wNjnc+N1AZznsvotKdGiE4PBL4xhmqAz9JGDmkKkrVfqIwSvgwu0FWQORXoauBQ=="/>
+            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1613017" type="application/octet-stream" sparkle:edSignature="KWr9JfIHWEGQ2H0z0/efHxeg4O2rqaF4uor2VUKd2fvdhH4PEfNClb7rLSEQpAt03jI2bhLZXP8uGw0yIFrZAA=="/>
         </item>
     </channel>
 </rss>

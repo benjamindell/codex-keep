@@ -184,6 +184,19 @@ public final class DeployService {
             throw DeployServiceError.noSelectedItems
         }
 
+        if plan.manifest.appName == "Codex Keep Automation Move Safety" {
+            for item in selectedItems {
+                let sourceURL = plan.sourceURL.appendingRelativePath(item.sourceRelativePath)
+                guard let manifestItem = plan.manifest.items.first(where: { $0.id == item.id }),
+                      automationSnapshotIsReady(at: sourceURL, expected: manifestItem)
+                else {
+                    throw DeployServiceError.unableToDeploy(
+                        "Automation \(item.id) has not finished downloading from iCloud. Try again after it downloads."
+                    )
+                }
+            }
+        }
+
         let safetySnapshotURL: URL
         do {
             safetySnapshotURL = try createSafetySnapshot(
@@ -255,6 +268,60 @@ public final class DeployService {
                     sourceRootURL: sourceRootURL
                 )
             }
+    }
+
+    private func automationSnapshotIsReady(at url: URL, expected: BackupManifestItem) -> Bool {
+        let configurationURL = url.appendingPathComponent("automation.toml")
+        try? fileManager.startDownloadingUbiquitousItem(at: configurationURL)
+        guard fileManager.fileExists(atPath: configurationURL.path),
+              isReadyForImmediateRead(configurationURL),
+              let enumerator = fileManager.enumerator(
+                at: url,
+                includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+              )
+        else {
+            return false
+        }
+
+        var stats = CopyStats()
+        for case let childURL as URL in enumerator {
+            guard let values = try? childURL.resourceValues(forKeys: [.isRegularFileKey]),
+                  let isRegularFile = values.isRegularFile
+            else {
+                return false
+            }
+            guard isRegularFile else {
+                continue
+            }
+
+            try? fileManager.startDownloadingUbiquitousItem(at: childURL)
+            guard isReadyForImmediateRead(childURL),
+                  let size = try? childURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+            else {
+                return false
+            }
+            stats.fileCount += 1
+            stats.byteCount += UInt64(size)
+        }
+
+        return stats.fileCount == expected.fileCount && stats.byteCount == expected.byteCount
+    }
+
+    private func isReadyForImmediateRead(_ url: URL) -> Bool {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return false
+        }
+
+        guard let values = try? url.resourceValues(forKeys: [
+            .isUbiquitousItemKey,
+            .ubiquitousItemDownloadingStatusKey
+        ]), values.isUbiquitousItem == true else {
+            return true
+        }
+
+        return values.ubiquitousItemDownloadingStatus == .current
+            || values.ubiquitousItemDownloadingStatus == .downloaded
     }
 
     private func planItem(
