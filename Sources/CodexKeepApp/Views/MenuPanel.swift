@@ -9,8 +9,9 @@ struct MenuPanel: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 9) {
-                Image(systemName: "externaldrive.badge.icloud")
-                    .font(.system(size: 16, weight: .semibold))
+                Image(nsImage: KeepStatusIcon.makeImage())
+                    .renderingMode(.template).resizable().scaledToFit()
+                    .frame(width: 24, height: 20)
                     .foregroundStyle(.blue).frame(width: 32, height: 32)
                     .background(.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
                 Text("Codex Keep").font(.system(size: 16, weight: .semibold))

@@ -1,6 +1,3 @@
-# Codex Keep 0.1.58
+# Codex Keep 0.1.59
 
-The menu bar icon now sits more neatly alongside other icons.
-
-- Lower the drive slightly to improve its alignment.
-- Make the lower-left Codex badge a little larger.
+The dropdown header now uses the same drive-and-Codex icon as the menu bar.
