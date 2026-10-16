@@ -1,8 +1,6 @@
-# Codex Keep 0.1.55
+# Codex Keep 0.1.56
 
-Codex Keep makes machine management clearer and keeps its menu bar icon steady.
+The menu bar now pairs a smaller Codex logo with a clearer drive badge and a Keep label.
 
-- Remove retired Macs from this Mac’s group without deleting their backups, and add them back when needed.
-- Manage trust inside each machine card on Machines & Sync.
-- The settings sidebar footer blends into the sidebar.
-- A fixed Codex icon with a drive badge replaces the menu bar label and changing sync icons.
+- Match the Codex LB logo size and make the drive badge more prominent.
+- Show “Keep” beside the icon, with a steady appearance during syncing.

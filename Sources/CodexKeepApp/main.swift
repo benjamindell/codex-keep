@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let peerSyncService = PeerSyncService()
     private let automationMoveService = AutomationMoveService()
     private let codexAppUpdateService = CodexAppUpdateService()
-    private let statusItem = NSStatusBar.system.statusItem(withLength: 30)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: 74)
     private let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
@@ -136,8 +136,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             button.image = KeepStatusIcon.makeImage()
             button.image?.isTemplate = true
-            button.imagePosition = .imageOnly
-            button.title = ""
+            button.imagePosition = .imageLeading
+            button.title = "Keep"
+            button.font = .systemFont(ofSize: 13, weight: .medium)
             button.toolTip = "Codex Keep"
             button.setAccessibilityLabel("Codex Keep")
             button.target = self
