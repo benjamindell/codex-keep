@@ -3,16 +3,16 @@
     <channel>
         <title>Codex Keep</title>
         <item>
-            <title>0.1.56</title>
-            <pubDate>Fri, 16 Oct 2026 16:14:02 +0100</pubDate>
+            <title>0.1.57</title>
+            <pubDate>Fri, 16 Oct 2026 16:17:47 +0100</pubDate>
             <link>https://codexkeep.app</link>
             <sparkle:fullReleaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:fullReleaseNotesLink>
-            <sparkle:version>57</sparkle:version>
-            <sparkle:shortVersionString>0.1.56</sparkle:shortVersionString>
+            <sparkle:version>58</sparkle:version>
+            <sparkle:shortVersionString>0.1.57</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <sparkle:releaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:releaseNotesLink>
-            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1816313" type="application/octet-stream" sparkle:edSignature="8VabadbUz5kH/u0f+MGOiMYQvd/QsOb6cWDut3C2hkuxhwah+qdydyVkIwinvRug0X+X6zzVw7OpOPUR7d5DDA==" />
+            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1816011" type="application/octet-stream" sparkle:edSignature="cYy+ajLCrgWz7Dq3wbCGWnuHPA27Ns2bqS8SnuxGHdvwJq0q0f1+GbC9KlV9EwDhfxytQEzS25ROiQj9xThuAw==" />
         </item>
     </channel>
 </rss>

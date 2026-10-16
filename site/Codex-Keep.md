@@ -1,6 +1,6 @@
-# Codex Keep 0.1.56
+# Codex Keep 0.1.57
 
-The menu bar now pairs a smaller Codex logo with a clearer drive badge and a Keep label.
+The menu bar now shows a drive with a Codex badge in its lower-left corner.
 
-- Match the Codex LB logo size and make the drive badge more prominent.
-- Show “Keep” beside the icon, with a steady appearance during syncing.
+- Use the drive as the main icon, with the Codex logo in place of the cloud badge.
+- Remove the Keep label for a compact icon that stays steady during syncing.
