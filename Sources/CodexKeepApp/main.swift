@@ -61,7 +61,7 @@ private extension CodexAppUpdateService.UpdateResult {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsStore = SettingsStore()
     private let backupService = BackupService()
     private let peerSyncService = PeerSyncService()
@@ -81,17 +81,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
 
     private var timer: Timer?
+    private var presentationTimer: Timer?
     private var repositoryPullTimer: Timer?
     private var codexAppUpdateTimer: Timer?
     private var animationTimer: Timer?
     private var backupTimeoutTimer: Timer?
-    private var trustedMachinesWindowController: NSWindowController?
+    private let presentation = KeepPresentation()
+    private var overviewRequestID = UUID()
+    private lazy var keepWindows = KeepWindowController(
+        statusItem: statusItem, presentation: presentation,
+        perform: { [weak self] in self?.perform($0) },
+        refresh: { [weak self] in self?.rebuildMenu() },
+        setTrustedMachines: { [weak self] in self?.saveTrustedMachineSelection($0) }
+    )
     private var manageAutomationsWindowController: NSWindowController?
     private var peerSyncReviewWindowController: NSWindowController?
     private var lastResult: BackupResult?
     private var lastPeerSyncResult: PeerSyncApplyResult?
     private var lastError: Error?
-    private weak var statusMenuItem: NSMenuItem?
     private var isBackingUp = false
     private var isDeploying = false
     private var deployPhase = ""
@@ -113,6 +120,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         scheduleTimer()
         scheduleRepositoryPullTimer()
         scheduleCodexAppUpdateTimer()
+        presentationTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.keepWindows.hasVisibleWindow else { return }
+                self.rebuildMenu()
+            }
+        }
+        if CommandLine.arguments.contains("--settings") {
+            keepWindows.showSettings(.machines)
+        } else if CommandLine.arguments.contains("--menu") {
+            keepWindows.showPanel()
+        }
     }
 
     private func configureStatusItem() {
@@ -121,8 +139,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
             button.title = "Codex Keep"
+            button.target = self
+            button.action = #selector(toggleMenuPanel)
         }
     }
+
+    @objc private func toggleMenuPanel() { keepWindows.togglePanel() }
 
     private func scheduleTimer() {
         timer?.invalidate()
@@ -192,78 +214,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return calendar.date(byAdding: .day, value: 1, to: today) ?? date.addingTimeInterval(24 * 60 * 60)
     }
 
+    // Keep the existing operations in the delegate; both new surfaces observe one presentation.
     private func rebuildMenu() {
-        let menu = NSMenu()
-        menu.delegate = self
-
-        let status = NSMenuItem(title: statusTitle(), action: nil, keyEquivalent: "")
-        status.isEnabled = false
-        statusMenuItem = status
-        menu.addItem(status)
-        menu.addItem(.separator())
-
-        let backUpNowItem = actionItem(title: "Back Up Now", action: #selector(backUpNow), keyEquivalent: "b")
-        backUpNowItem.isEnabled = !isDeploying
-        menu.addItem(backUpNowItem)
-        menu.addItem(actionItem(title: "Review Peer Changes...", action: #selector(reviewPeerChanges), keyEquivalent: "r"))
-        menu.addItem(actionItem(title: "Open Backup Folder", action: #selector(openBackupFolder), keyEquivalent: "o"))
-        menu.addItem(actionItem(title: "Open Diagnostic Log", action: #selector(openDiagnosticLog), keyEquivalent: "l"))
-        let deployItem = actionItem(title: "Deploy Backup to This Mac...", action: #selector(deployBackupToThisMac), keyEquivalent: "d")
-        deployItem.isEnabled = !isDeploying && !isBackingUp
-        menu.addItem(deployItem)
-        menu.addItem(actionItem(title: "Trusted Machines...", action: #selector(configureTrustedMachines), keyEquivalent: "t"))
-        menu.addItem(actionItem(title: "Manage Automations...", action: #selector(manageAutomations), keyEquivalent: "m"))
-        menu.addItem(autoSyncItem())
-        menu.addItem(repositoryDevFilesItem())
-        menu.addItem(secondaryMachineModeItem())
-        let pullRepositoriesItem = actionItem(title: "Pull Repositories Now", action: #selector(pullRepositoriesNow), keyEquivalent: "p")
-        pullRepositoriesItem.isEnabled = !isPullingRepositories
-        menu.addItem(pullRepositoriesItem)
-        menu.addItem(actionItem(title: "Open Repository Pull Log", action: #selector(openRepositoryPullLog), keyEquivalent: "g"))
-        menu.addItem(actionItem(title: "Update Codex App Now", action: #selector(updateCodexAppNow), keyEquivalent: ""))
-        menu.addItem(actionItem(title: "Open Codex App Update Log", action: #selector(openCodexAppUpdateLog), keyEquivalent: ""))
-        menu.addItem(actionItem(title: "Choose Backup Folder...", action: #selector(chooseBackupFolder), keyEquivalent: ","))
-        menu.addItem(.separator())
-        menu.addItem(launchAtLoginItem())
-        menu.addItem(actionItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "u"))
-        menu.addItem(.separator())
-        menu.addItem(actionItem(title: "Quit Codex Keep", action: #selector(quit), keyEquivalent: "q"))
-
-        statusItem.menu = menu
+        presentation.settings = settingsStore.settings
+        presentation.status = statusTitle()
+        presentation.isBackingUp = isBackingUp
+        presentation.isDeploying = isDeploying
+        presentation.isPullingRepositories = isPullingRepositories
+        presentation.launchAtLogin = isLaunchAtLoginEnabled
+        presentation.version = Self.appVersionDescription()
+        presentation.error = lastError?.localizedDescription
+        presentation.activity = isDeploying ? "Restoring" : isBackingUp ? "Saving" : isPullingRepositories ? "Pulling" : lastError != nil ? "Needs attention" : "Ready"
+        let settings = settingsStore.settings
+        let requestID = UUID()
+        overviewRequestID = requestID
+        Task.detached {
+            let machines = MachineOverviewService().machines(settings: settings)
+            await MainActor.run {
+                guard self.overviewRequestID == requestID else { return }
+                self.presentation.machines = machines.map { machine in
+                    guard machine.isCurrent, let result = self.lastResult else { return machine }
+                    return MachineOverview(name: machine.name, isCurrent: true, isTrusted: false,
+                                           secondaryMachineMode: settings.secondaryMachineMode,
+                                           lastBackupAt: result.manifest.createdAt)
+                }
+            }
+        }
     }
 
-    func menuWillOpen(_ menu: NSMenu) {
-        statusMenuItem?.title = statusTitle()
-    }
-
-    private func actionItem(title: String, action: Selector, keyEquivalent: String) -> NSMenuItem {
-        let item = NSMenuItem(title: title, action: action, keyEquivalent: keyEquivalent)
-        item.target = self
-        return item
-    }
-
-    private func launchAtLoginItem() -> NSMenuItem {
-        let item = actionItem(title: "Launch at Login", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
-        item.state = isLaunchAtLoginEnabled ? .on : .off
-        return item
-    }
-
-    private func autoSyncItem() -> NSMenuItem {
-        let item = actionItem(title: "Auto-sync Trusted Machines", action: #selector(toggleAutoSync), keyEquivalent: "")
-        item.state = settingsStore.settings.automaticallySyncTrustedMachines ? .on : .off
-        return item
-    }
-
-    private func repositoryDevFilesItem() -> NSMenuItem {
-        let item = actionItem(title: "Sync Local Repo Dev Files", action: #selector(toggleRepositoryDevFiles), keyEquivalent: "")
-        item.state = settingsStore.settings.syncRepositoryDevFiles ? .on : .off
-        return item
-    }
-
-    private func secondaryMachineModeItem() -> NSMenuItem {
-        let item = actionItem(title: "Secondary Machine Mode", action: #selector(toggleSecondaryMachineMode), keyEquivalent: "")
-        item.state = settingsStore.settings.secondaryMachineMode ? .on : .off
-        return item
+    private func perform(_ action: KeepAction) {
+        keepWindows.hidePanel()
+        NSApp.activate(ignoringOtherApps: true)
+        switch action {
+        case .backUp: backUpNow()
+        case .openFolder: openBackupFolder()
+        case .chooseFolder: chooseBackupFolder()
+        case .restore: deployBackupToThisMac()
+        case .reviewChanges: reviewPeerChanges()
+        case .manageAutomations: manageAutomations()
+        case .autoSync: toggleAutoSync()
+        case .repositoryDevFiles: toggleRepositoryDevFiles()
+        case .secondaryMode: toggleSecondaryMachineMode()
+        case .pullRepositories: pullRepositoriesNow()
+        case .updateCodex: updateCodexAppNow()
+        case .launchAtLogin: toggleLaunchAtLogin()
+        case .checkForUpdates: checkForUpdates()
+        case .backupLog: openDiagnosticLog()
+        case .repositoryLog: openRepositoryPullLog()
+        case .codexUpdateLog: openCodexAppUpdateLog()
+        case .quit: quit()
+        }
+        rebuildMenu()
     }
 
     private var isLaunchAtLoginEnabled: Bool {
@@ -283,6 +284,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return "Pulling repositories"
         }
 
+        if let lastError {
+            return "Needs attention: \(lastError.localizedDescription)"
+        }
+
         if let result = lastResult {
             if let lastPeerSyncResult {
                 let peerSummary = peerSyncStatusSummary(lastPeerSyncResult)
@@ -292,10 +297,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
 
             return "Last synced \(relativeSyncTime(since: result.manifest.createdAt))"
-        }
-
-        if let lastError {
-            return "Backup failed: \(lastError.localizedDescription)"
         }
 
         return "Codex Keep is ready"
@@ -412,37 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func configureTrustedMachines() {
-        let availablePeers = peerSyncService.availablePeerMachineNames(settings: settingsStore.settings)
-        let view = TrustedMachinesView(
-            machineNames: availablePeers,
-            selectedMachineNames: settingsStore.settings.trustedMachineNames,
-            backupFolderPath: settingsStore.settings.destinationRootPath,
-            currentMachineName: Machine.currentName(),
-            onSelectionChange: { [weak self] selectedMachineNames in
-                Task { @MainActor in
-                    self?.saveTrustedMachineSelection(selectedMachineNames)
-                }
-            },
-            onOpenBackupFolder: { [weak self] in
-                guard let self else {
-                    return
-                }
-
-                NSWorkspace.shared.open(URL(fileURLWithPath: self.settingsStore.settings.destinationRootPath))
-            }
-        )
-        let hostingController = NSHostingController(rootView: view)
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "Trusted Machines"
-        window.styleMask = [.titled, .closable]
-        window.isReleasedWhenClosed = false
-        window.setContentSize(NSSize(width: 560, height: availablePeers.isEmpty ? 300 : min(520, 238 + availablePeers.count * 54)))
-        window.center()
-
-        let controller = NSWindowController(window: window)
-        trustedMachinesWindowController = controller
-        controller.showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        keepWindows.showSettings(.machines)
     }
 
     @objc private func deployBackupToThisMac() {
@@ -481,6 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     self.finishDeploy()
                     self.lastError = error
                     self.presentError(error, messageText: "Codex Keep could not review the backup.")
+                    self.rebuildMenu()
                 case let .success(plan):
                     self.deployPhase = "Reviewing restore"
                     self.rebuildMenu()
@@ -511,6 +483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                 self.lastError = error
                                 self.presentError(error, messageText: "Codex Keep could not deploy the backup.")
                             }
+                            self.rebuildMenu()
                         }
                     }
                 }
@@ -728,6 +701,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             scheduleRepositoryPullTimer()
             scheduleCodexAppUpdateTimer()
+            runBackup()
             if isEnabling {
                 runRepositoryPull()
             }
@@ -940,7 +914,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func advanceSyncAnimation() {
         animationFrame = (animationFrame + 1) % animationFrames.count
         currentBackupPhase = Self.lastBackupLogPhase() ?? currentBackupPhase
-        statusMenuItem?.title = statusTitle()
+        presentation.status = statusTitle()
         updateStatusItemForSync()
     }
 
@@ -1674,150 +1648,6 @@ private struct PeerSyncReviewView: View {
         case .localChanged:
             "local changed"
         }
-    }
-}
-
-private struct TrustedMachinesView: View {
-    var machineNames: [String]
-    var backupFolderPath: String
-    var currentMachineName: String
-    var onSelectionChange: (Set<String>) -> Void
-    var onOpenBackupFolder: () -> Void
-
-    @State private var selectedMachineNames: Set<String>
-
-    init(
-        machineNames: [String],
-        selectedMachineNames: Set<String>,
-        backupFolderPath: String,
-        currentMachineName: String,
-        onSelectionChange: @escaping (Set<String>) -> Void,
-        onOpenBackupFolder: @escaping () -> Void
-    ) {
-        self.machineNames = machineNames
-        self.backupFolderPath = backupFolderPath
-        self.currentMachineName = currentMachineName
-        self.onSelectionChange = onSelectionChange
-        self.onOpenBackupFolder = onOpenBackupFolder
-        self._selectedMachineNames = State(initialValue: selectedMachineNames)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-
-            if machineNames.isEmpty {
-                emptyState
-            } else {
-                machineList
-            }
-
-            Divider()
-
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Backup folder")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(backupFolderPath)
-                        .font(.caption)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-
-                Spacer()
-
-                Button("Open Folder", action: onOpenBackupFolder)
-            }
-        }
-        .padding(24)
-        .frame(minWidth: 520, maxWidth: 520, alignment: .topLeading)
-    }
-
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Trusted Machines")
-                .font(.title2.weight(.semibold))
-
-            Text("Choose which machine backups this Mac should review and sync from.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-
-            Text("This Mac: \(currentMachineName)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No peer machine backups found")
-                .font(.headline)
-            Text("Run Codex Keep on another Mac using this same backup folder, then come back here.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var machineList: some View {
-        VStack(spacing: 0) {
-            ForEach(machineNames, id: \.self) { machineName in
-                machineRow(machineName)
-
-                if machineName != machineNames.last {
-                    Divider()
-                        .padding(.leading, 12)
-                }
-            }
-        }
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-        )
-    }
-
-    private func machineRow(_ machineName: String) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(machineName)
-                    .font(.body.weight(.medium))
-                Text("Review and sync from this backup")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Toggle("", isOn: binding(for: machineName))
-                .toggleStyle(.switch)
-                .labelsHidden()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-    }
-
-    private func binding(for machineName: String) -> Binding<Bool> {
-        Binding(
-            get: {
-                selectedMachineNames.contains(machineName)
-            },
-            set: { isSelected in
-                if isSelected {
-                    selectedMachineNames.insert(machineName)
-                } else {
-                    selectedMachineNames.remove(machineName)
-                }
-
-                onSelectionChange(selectedMachineNames)
-            }
-        )
     }
 }
 

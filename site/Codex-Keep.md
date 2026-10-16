@@ -1,6 +1,8 @@
-# Codex Keep 0.1.53
+# Codex Keep 0.1.54
 
-Keeps machine-specific Codex configuration in each Mac's backup without syncing it between trusted Macs.
+Codex Keep now shows your Macs in a compact menu bar panel and groups its controls in a sidebar settings window.
 
-- Continues backing up `~/.codex/config.toml` for manual restore.
-- Excludes `config.toml` from current and legacy trusted-machine sync.
+- See each Mac's role, trust status, and last published backup.
+- Manage sync, backups, automations, secondary Mac tasks, and app preferences in Settings.
+- Run a backup and sync directly from the dropdown.
+- Roles for other Macs appear after they run the updated app and publish a new backup.

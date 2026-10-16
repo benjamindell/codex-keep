@@ -5,6 +5,7 @@ public struct BackupManifest: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var createdAt: Date
     public var machineName: String
+    public var secondaryMachineMode: Bool?
     public var items: [BackupManifestItem]
     public var files: [BackupManifestFile]
     public var tombstones: [SyncTombstone]
@@ -18,12 +19,14 @@ public struct BackupManifest: Codable, Equatable, Sendable {
         items: [BackupManifestItem],
         files: [BackupManifestFile] = [],
         tombstones: [SyncTombstone] = [],
-        warnings: [String]
+        warnings: [String],
+        secondaryMachineMode: Bool? = nil
     ) {
         self.appName = appName
         self.schemaVersion = schemaVersion
         self.createdAt = createdAt
         self.machineName = machineName
+        self.secondaryMachineMode = secondaryMachineMode
         self.items = items
         self.files = files
         self.tombstones = tombstones
@@ -35,6 +38,7 @@ public struct BackupManifest: Codable, Equatable, Sendable {
         case schemaVersion
         case createdAt
         case machineName
+        case secondaryMachineMode
         case items
         case files
         case tombstones
@@ -47,6 +51,7 @@ public struct BackupManifest: Codable, Equatable, Sendable {
         self.schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         self.createdAt = try container.decode(Date.self, forKey: .createdAt)
         self.machineName = try container.decode(String.self, forKey: .machineName)
+        self.secondaryMachineMode = try container.decodeIfPresent(Bool.self, forKey: .secondaryMachineMode)
         self.items = try container.decode([BackupManifestItem].self, forKey: .items)
         self.files = try container.decodeIfPresent([BackupManifestFile].self, forKey: .files) ?? []
         self.tombstones = try container.decodeIfPresent([SyncTombstone].self, forKey: .tombstones) ?? []

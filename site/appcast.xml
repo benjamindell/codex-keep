@@ -1,18 +1,18 @@
-<?xml version="1.0" standalone="yes"?>
+<?xml version='1.0' encoding='utf-8'?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Codex Keep</title>
         <item>
-            <title>0.1.53</title>
-            <pubDate>Thu, 24 Sep 2026 18:10:56 +0100</pubDate>
+            <title>0.1.54</title>
+            <pubDate>Fri, 16 Oct 2026 15:20:56 +0100</pubDate>
             <link>https://codexkeep.app</link>
             <sparkle:fullReleaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:fullReleaseNotesLink>
-            <sparkle:version>54</sparkle:version>
-            <sparkle:shortVersionString>0.1.53</sparkle:shortVersionString>
+            <sparkle:version>55</sparkle:version>
+            <sparkle:shortVersionString>0.1.54</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <sparkle:releaseNotesLink>https://codexkeep.app/Codex-Keep.md</sparkle:releaseNotesLink>
-            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1614353" type="application/octet-stream" sparkle:edSignature="A3QAZEbDYUbT/+TGaZW2ba4mYvMcs0HtKhdTVKoqWF/UFZLavcHQyPOht1wn3wG4GiJWH5/dAGrcDKv+gIwJAg=="/>
+            <enclosure url="https://codexkeep.app/downloads/Codex-Keep.zip" length="1792436" type="application/octet-stream" sparkle:edSignature="pRt55hPyEDOXNtg2AjLiUrAOzFn6NI/fl7+QYbE0H1SVDvKhF4fnj46Oq+qbq9nPRU5vPfsS7yhWqdXEOloGCw==" />
         </item>
     </channel>
 </rss>

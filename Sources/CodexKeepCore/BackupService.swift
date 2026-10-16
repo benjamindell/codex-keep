@@ -131,7 +131,8 @@ public final class BackupService {
                 first.backupRelativePath.localizedStandardCompare(second.backupRelativePath) == .orderedAscending
             },
             tombstones: manifestTombstones(from: settings, copiedFiles: manifestFiles),
-            warnings: warnings
+            warnings: warnings,
+            secondaryMachineMode: settings.secondaryMachineMode
         )
 
         let manifestData = try encoder.encode(manifest)
@@ -201,7 +202,8 @@ public final class BackupService {
             tombstones: manifest.tombstones.filter {
                 SyncPathPolicy.isSyncable($0.backupRelativePath)
             },
-            warnings: manifest.warnings
+            warnings: manifest.warnings,
+            secondaryMachineMode: manifest.secondaryMachineMode
         )
         let generationFileName = SyncGenerationLayout.generationFileName(now: now)
         let generationURL = generationsURL.appendingPathComponent(generationFileName)

@@ -12,6 +12,12 @@ The first version is deliberately conservative:
 - Deploying a backup to the current Mac is intentional: Codex Keep shows a dry-run checklist and saves a safety snapshot before replacing selected local files.
 - Trusted-machine sync is opt-in: choose peer Macs first, review their changes, then enable automatic sync for non-conflicting file updates when you are ready.
 
+## Menu bar and settings
+
+The menu bar panel lists this Mac and the machines found in your backup folder, including trusted machines whose backups are unavailable locally. Cards show each Mac's role, trust status, and last published backup time. Click Settings or a machine card to open the grouped settings window.
+
+Settings groups the controls into Machines & Sync, Backups & Restore, Automations, Secondary Mac, and General. Primary means Secondary Machine Mode is off; it does not designate a sync leader. Older peer backups show Role unavailable until that Mac runs the updated app and publishes its role.
+
 ## Default backup set
 
 - `~/.codex/automations` to `Codex/automations`
@@ -28,7 +34,7 @@ Generated dependency, build, virtual-environment, and tool-cache folders such as
 
 ## Deploying to another Mac
 
-Use `Deploy Backup to This Mac...` from the menu bar app to seed or update a Mac from a Codex Keep backup. You can choose a machine folder, a `latest` folder, or a dated snapshot.
+Use `Settings > Backups & Restore > Review Backup…` to seed or update a Mac from a Codex Keep backup. You can choose a machine folder, a `latest` folder, or a dated snapshot.
 
 Codex Keep reviews the backup before writing anything:
 
@@ -39,7 +45,7 @@ Codex Keep reviews the backup before writing anything:
 
 ## Syncing trusted Macs
 
-Use `Trusted Machines...` to choose which other Codex Keep machine folders this Mac should trust. Then use `Review Peer Changes...` to inspect file-level differences from those machines.
+Use `Settings > Machines & Sync` to choose which other Codex Keep machine folders this Mac should trust. Then use `Review…` to inspect file-level differences from those machines.
 
 - Non-conflicting peer creates and updates are selected by default.
 - Automatic trusted-machine sync applies only non-conflicting file creates and updates.
@@ -57,7 +63,7 @@ Use `Trusted Machines...` to choose which other Codex Keep machine folders this 
 
 ## Managing automations
 
-Use `Manage Automations...` to move local automations to another trusted Mac. Codex Keep writes a pending move package into the target machine folder, saves an `Automation Move Safety` snapshot on the source Mac, and then removes the selected local automation folders.
+Use `Settings > Automations > Manage…` to move local automations to another trusted Mac. Codex Keep writes a pending move package into the target machine folder, saves an `Automation Move Safety` snapshot on the source Mac, and then removes the selected local automation folders.
 
 The target Mac installs pending incoming moves automatically before its next backup run, using only the automation IDs listed in the approved move manifest. `Manage Automations...` also shows pending incoming moves and can install them manually. If an installed automation replaces an existing local automation, Codex Keep saves an automation move safety snapshot on the target Mac first. Automations are still excluded from trusted-machine sync, so scheduled jobs do not duplicate across Macs.
 
@@ -69,7 +75,7 @@ Scheduled runs request unavailable iCloud content and retry it later instead of 
 
 ## Secondary Machine Mode
 
-Use `Secondary Machine Mode` on always-on Macs that should stay ready for remote Codex work.
+Enable `Settings > Secondary Mac > Secondary Machine Mode` on always-on Macs that should stay ready for remote Codex work.
 
 - Every 30 minutes, Codex Keep updates Git repositories in `~/Repositories`.
 - If a repository only has generated artifact changes with `.md`, `.yml`, `.yaml`, `.csv`, `.xls`, or `.xlsx` extensions, Codex Keep commits those changes before integrating upstream updates and pushes once the branch is safe to push.
@@ -82,7 +88,7 @@ Use `Secondary Machine Mode` on always-on Macs that should stay ready for remote
 
 ```sh
 swift test
-swift run CodexKeep
+./script/build_and_run.sh
 ```
 
 Build an app bundle:
@@ -92,7 +98,7 @@ chmod +x Packaging/make_app.sh
 Packaging/make_app.sh
 ```
 
-The built app bundle is written to `.build/release/Codex Keep.app`.
+The built app bundle is written to `.build/release/Codex Keep.app`. The Codex Run button uses `script/build_and_run.sh`, which builds the bundle, restarts the app, and supports `--verify`, `--debug`, `--logs`, and `--telemetry`.
 
 ## Updates
 
@@ -100,7 +106,7 @@ Codex Keep uses Sparkle for update checks.
 
 - Feed: `https://codexkeep.app/appcast.xml`
 - Current download: `https://codexkeep.app/downloads/Codex-Keep.zip`
-- The app has a `Check for Updates...` menu item.
+- Use `Settings > General > Check for Updates…` to check manually.
 - Automatic checks are enabled through `SUEnableAutomaticChecks`.
 
 Release archives are signed with Sparkle's EdDSA key. The public key is embedded in `Packaging/Info.plist`; the private key is stored in the local macOS Keychain.
