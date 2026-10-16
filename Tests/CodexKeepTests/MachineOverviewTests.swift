@@ -71,3 +71,60 @@ import Testing
     let machines = MachineOverviewService().machines(settings: settings, currentMachineName: "Other")
     #expect(machines.first { $0.name == result.manifest.machineName }?.secondaryMachineMode == true)
 }
+
+@Test func removingMachinePersistsRevokesTrustAndPreservesBackups() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let latest = root.appendingPathComponent("Mini/latest")
+    try FileManager.default.createDirectory(at: latest, withIntermediateDirectories: true)
+    let backup = latest.appendingPathComponent("manifest.json")
+    try Data("existing backup".utf8).write(to: backup)
+    let settingsURL = root.appendingPathComponent("settings.json")
+    let store = SettingsStore(settingsURL: settingsURL, homeDirectory: root)
+    try store.update {
+        $0.destinationRootPath = root.path
+        $0.trustedMachineNames = ["Mini"]
+        $0.automaticallySyncTrustedMachines = true
+        $0.removeMachine("Mini", currentMachineName: "Laptop")
+    }
+    let reloaded = SettingsStore(settingsURL: settingsURL, homeDirectory: root)
+    #expect(reloaded.settings.removedMachineNames == ["Mini"])
+    #expect(reloaded.settings.trustedMachineNames.isEmpty)
+    #expect(!reloaded.settings.automaticallySyncTrustedMachines)
+    #expect(try Data(contentsOf: backup) == Data("existing backup".utf8))
+    #expect(MachineOverviewService().machines(settings: reloaded.settings, currentMachineName: "Laptop").map(\.name) == ["Laptop"])
+    try reloaded.update { $0.restoreMachine("Mini") }
+    let machines = MachineOverviewService().machines(settings: reloaded.settings, currentMachineName: "Laptop")
+    #expect(machines.map(\.name) == ["Laptop", "Mini"])
+    #expect(machines.last?.isTrusted == false)
+}
+
+@Test func removingCurrentMacIsIgnoredAndOtherPeersStayTrusted() {
+    var settings = BackupSettings(destinationRootPath: "/unused", enabledItemIDs: [],
+                                  trustedMachineNames: ["Mini", "Studio"], automaticallySyncTrustedMachines: true)
+    let original = settings
+    settings.removeMachine("Laptop", currentMachineName: "Laptop")
+    #expect(settings == original)
+    settings.removeMachine("Mini", currentMachineName: "Laptop")
+    #expect(settings.trustedMachineNames == ["Studio"])
+    #expect(settings.automaticallySyncTrustedMachines)
+}
+
+@Test func oldSettingsDecodeWithoutRemovedMachines() throws {
+    let data = Data("""
+    {"destinationRootPath":"/backups","enabledItemIDs":[],"trustedMachineNames":["Studio"],"automaticallySyncTrustedMachines":true}
+    """.utf8)
+    let settings = try JSONDecoder().decode(BackupSettings.self, from: data)
+    #expect(settings.removedMachineNames.isEmpty)
+    #expect(settings.trustedMachineNames == ["Studio"])
+    #expect(settings.automaticallySyncTrustedMachines)
+}
+
+@Test func removedPeerCannotSyncEvenWithStaleTrust() throws {
+    var settings = BackupSettings(destinationRootPath: "/unused", enabledItemIDs: [], removedMachineNames: ["Mini", "Laptop"])
+    settings.trustedMachineNames = ["Mini"]
+    let local = BackupManifest(appName: "Codex Keep", schemaVersion: 1, createdAt: Date(),
+                               machineName: "Laptop", items: [], warnings: [])
+    #expect(try PeerSyncService().makePlans(settings: settings, localManifest: local, items: []).isEmpty)
+    #expect(MachineOverviewService().machines(settings: settings, currentMachineName: "Laptop").map(\.name) == ["Laptop"])
+}

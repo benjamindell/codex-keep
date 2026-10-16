@@ -38,6 +38,8 @@ public struct MachineOverviewService: Sendable {
                 names.insert(directory.lastPathComponent)
             }
         }
+        names.subtract(settings.removedMachineNames)
+        names.insert(currentMachineName)
         return names.sorted {
             if $0 == currentMachineName { return true }
             if $1 == currentMachineName { return false }

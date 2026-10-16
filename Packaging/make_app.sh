@@ -13,6 +13,7 @@ mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 mkdir -p "$APP_DIR/Contents/Frameworks"
 cp "$BUILD_DIR/CodexKeep" "$APP_DIR/Contents/MacOS/CodexKeep"
 cp "$ROOT_DIR/Packaging/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp -R "$BUILD_DIR/CodexKeep_CodexKeepApp.bundle" "$APP_DIR/Contents/Resources/"
 
 if [ -d "$BUILD_DIR/Sparkle.framework" ]; then
   cp -R "$BUILD_DIR/Sparkle.framework" "$APP_DIR/Contents/Frameworks/Sparkle.framework"

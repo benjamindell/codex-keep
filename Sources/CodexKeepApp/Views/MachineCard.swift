@@ -5,6 +5,9 @@ struct MachineCard: View {
     let machine: MachineOverview
     var activity: String? = nil
     var backupIntervalMinutes = 30
+    var trust: Binding<Bool>? = nil
+    var remove: (() -> Void)? = nil
+    var canChangeSettings = true
 
     private var role: String {
         switch machine.secondaryMachineMode {
@@ -60,6 +63,18 @@ struct MachineCard: View {
             .font(.system(size: 10)).foregroundStyle(.secondary)
             .help(machine.lastBackupAt.map { "Last published backup: \($0.formatted(date: .abbreviated, time: .standard))" }
                   ?? "Waiting for a locally readable backup manifest. Role information appears after this Mac runs the updated app.")
+            if !machine.isCurrent, let trust {
+                Divider()
+                HStack {
+                    Toggle("Trust this Mac", isOn: trust)
+                        .toggleStyle(.switch).font(.system(size: 12))
+                    Spacer()
+                    if let remove {
+                        Button("Remove", action: remove)
+                            .help("Remove this Mac from the group on this Mac. Its backups are kept.")
+                    }
+                }.disabled(!canChangeSettings)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .panelCard()

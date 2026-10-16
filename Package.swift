@@ -23,7 +23,8 @@ let package = Package(
             dependencies: [
                 "CodexKeepCore",
                 .product(name: "Sparkle", package: "Sparkle")
-            ]
+            ],
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "CodexKeepTests",

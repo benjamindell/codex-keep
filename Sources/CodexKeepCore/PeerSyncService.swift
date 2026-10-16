@@ -206,7 +206,7 @@ public final class PeerSyncService {
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser,
         items: [BackupItem]? = nil
     ) throws -> [PeerSyncPlan] {
-        let peerNames = settings.trustedMachineNames.sorted {
+        let peerNames = settings.trustedMachineNames.subtracting(settings.removedMachineNames).sorted {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
         let restoreItems = items ?? DefaultBackupItems.items(homeDirectory: homeDirectory, fileManager: fileManager)

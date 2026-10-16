@@ -67,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let peerSyncService = PeerSyncService()
     private let automationMoveService = AutomationMoveService()
     private let codexAppUpdateService = CodexAppUpdateService()
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: 30)
     private let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .full
@@ -84,7 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var presentationTimer: Timer?
     private var repositoryPullTimer: Timer?
     private var codexAppUpdateTimer: Timer?
-    private var animationTimer: Timer?
+    private var backupPhaseTimer: Timer?
     private var backupTimeoutTimer: Timer?
     private let presentation = KeepPresentation()
     private var overviewRequestID = UUID()
@@ -92,7 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem: statusItem, presentation: presentation,
         perform: { [weak self] in self?.perform($0) },
         refresh: { [weak self] in self?.rebuildMenu() },
-        setTrustedMachines: { [weak self] in self?.saveTrustedMachineSelection($0) }
+        setTrustedMachines: { [weak self] in self?.saveTrustedMachineSelection($0) },
+        setMachineRemoved: { [weak self] in self?.saveMachineRemoval($0, removed: $1) }
     )
     private var manageAutomationsWindowController: NSWindowController?
     private var peerSyncReviewWindowController: NSWindowController?
@@ -105,8 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var isPullingRepositories = false
     private var activeBackupID: UUID?
     private var currentBackupPhase = "starting backup"
-    private var animationFrame = 0
-    private let animationFrames = ["|", "/", "-", "\\"]
     private let minimumSyncIndicatorDuration: TimeInterval = 1.25
     private let backupTimeoutDuration: TimeInterval = 10 * 60
     private let repositoryPullIntervalDuration: TimeInterval = 30 * 60
@@ -135,10 +134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "externaldrive.badge.icloud", accessibilityDescription: "Codex Keep")
+            button.image = KeepStatusIcon.makeImage()
             button.image?.isTemplate = true
-            button.imagePosition = .imageLeading
-            button.title = "Codex Keep"
+            button.imagePosition = .imageOnly
+            button.title = ""
+            button.toolTip = "Codex Keep"
+            button.setAccessibilityLabel("Codex Keep")
             button.target = self
             button.action = #selector(toggleMenuPanel)
         }
@@ -438,7 +439,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sourceURL = normalizedBackupSourceURL(from: selectedURL)
         isDeploying = true
         deployPhase = "Reading restore snapshot"
-        updateStatusItemForDeploy()
         rebuildMenu()
 
         Task.detached {
@@ -462,7 +462,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
 
                     self.deployPhase = "Restoring \(selectedItemIDs.count) items"
-                    self.updateStatusItemForDeploy()
                     self.rebuildMenu()
                     let settings = self.settingsStore.settings
                     Task.detached {
@@ -494,20 +493,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func finishDeploy() {
         isDeploying = false
         deployPhase = ""
-        if !isBackingUp && !isPullingRepositories {
-            restoreDefaultStatusItem()
-        }
         rebuildMenu()
-    }
-
-    private func updateStatusItemForDeploy() {
-        guard let button = statusItem.button else {
-            return
-        }
-
-        button.image = NSImage(systemSymbolName: "externaldrive", accessibilityDescription: "Restoring backup")
-        button.image?.isTemplate = true
-        button.title = "Restoring"
     }
 
     @objc private func manageAutomations() {
@@ -619,10 +605,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveTrustedMachineSelection(_ selectedMachineNames: Set<String>) {
+        guard !isBackingUp, !isDeploying else { return }
         do {
             try settingsStore.update { settings in
-                settings.trustedMachineNames = selectedMachineNames
-                if selectedMachineNames.isEmpty {
+                settings.trustedMachineNames = selectedMachineNames.subtracting(settings.removedMachineNames)
+                if settings.trustedMachineNames.isEmpty {
                     settings.automaticallySyncTrustedMachines = false
                 }
             }
@@ -631,6 +618,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentError(error, messageText: "Codex Keep could not save trusted machines.")
         }
 
+        rebuildMenu()
+    }
+
+    private func saveMachineRemoval(_ name: String, removed: Bool) {
+        guard !isBackingUp, !isDeploying else { return }
+        do {
+            try settingsStore.update { settings in
+                if removed { settings.removeMachine(name) }
+                else { settings.restoreMachine(name) }
+            }
+        } catch {
+            lastError = error
+            presentError(error, messageText: "Codex Keep could not update the machine group.")
+        }
         rebuildMenu()
     }
 
@@ -778,9 +779,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isPullingRepositories = true
-        if !isBackingUp {
-            updateStatusItemForRepositoryPull()
-        }
         rebuildMenu()
 
         Task.detached {
@@ -795,9 +793,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             await MainActor.run {
                 self.isPullingRepositories = false
-                if !self.isBackingUp {
-                    self.restoreDefaultStatusItem()
-                }
                 self.rebuildMenu()
             }
         }
@@ -813,7 +808,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activeBackupID = backupID
         currentBackupPhase = "starting backup"
         lastError = nil
-        startSyncAnimation()
+        startBackupPhaseUpdates()
         scheduleBackupTimeout(for: backupID)
         rebuildMenu()
 
@@ -842,7 +837,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.backupTimeoutTimer?.invalidate()
                 self.backupTimeoutTimer = nil
                 self.activeBackupID = nil
-                self.stopSyncAnimation()
+                self.stopBackupPhaseUpdates()
                 self.isBackingUp = false
 
                 switch result {
@@ -900,56 +895,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
-    private func startSyncAnimation() {
-        animationFrame = 0
-        updateStatusItemForSync()
-        animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+    private func startBackupPhaseUpdates() {
+        backupPhaseTimer?.invalidate()
+        backupPhaseTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                self?.advanceSyncAnimation()
+                guard let self else { return }
+                self.currentBackupPhase = Self.lastBackupLogPhase() ?? self.currentBackupPhase
+                self.presentation.status = self.statusTitle()
             }
         }
     }
 
-    private func advanceSyncAnimation() {
-        animationFrame = (animationFrame + 1) % animationFrames.count
-        currentBackupPhase = Self.lastBackupLogPhase() ?? currentBackupPhase
-        presentation.status = statusTitle()
-        updateStatusItemForSync()
-    }
-
-    private func stopSyncAnimation() {
-        animationTimer?.invalidate()
-        animationTimer = nil
-        restoreDefaultStatusItem()
-    }
-
-    private func restoreDefaultStatusItem() {
-        if let button = statusItem.button {
-            button.image = NSImage(systemSymbolName: "externaldrive.badge.icloud", accessibilityDescription: "Codex Keep")
-            button.image?.isTemplate = true
-            button.title = "Codex Keep"
-        }
-    }
-
-    private func updateStatusItemForSync() {
-        guard let button = statusItem.button else {
-            return
-        }
-
-        button.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Backing up")
-        button.image?.isTemplate = true
-        button.title = "Saving \(animationFrames[animationFrame])"
-    }
-
-    private func updateStatusItemForRepositoryPull() {
-        guard let button = statusItem.button else {
-            return
-        }
-
-        button.image = NSImage(systemSymbolName: "arrow.triangle.2.circlepath", accessibilityDescription: "Pulling repositories")
-        button.image?.isTemplate = true
-        button.title = "Pulling"
+    private func stopBackupPhaseUpdates() {
+        backupPhaseTimer?.invalidate()
+        backupPhaseTimer = nil
     }
 
     private func presentError(_ error: Error, messageText: String = "Codex Keep could not finish the backup.") {

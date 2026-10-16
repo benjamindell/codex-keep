@@ -5,6 +5,7 @@ struct KeepSettingsView: View {
     @ObservedObject var presentation: KeepPresentation
     let perform: (KeepAction) -> Void
     let setTrustedMachines: (Set<String>) -> Void
+    let setMachineRemoved: (String, Bool) -> Void
 
     private var section: SettingsSection { presentation.section ?? .machines }
 
@@ -17,12 +18,12 @@ struct KeepSettingsView: View {
                             Label(section.title, systemImage: section.symbol).tag(section)
                         }
                     }
-                }.listStyle(.sidebar)
+                }.listStyle(.sidebar).scrollContentBackground(.hidden)
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Codex Keep").font(.system(size: 12, weight: .medium))
                     Text(presentation.version).font(.system(size: 11)).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
-            }.frame(width: 210).background(.bar)
+            }.frame(width: 210).background(.regularMaterial)
             Divider()
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 5) {
@@ -63,24 +64,35 @@ struct KeepSettingsView: View {
         VStack(alignment: .leading, spacing: 20) {
             settingsGroup("THIS GROUP") {
                 ForEach(presentation.machines) { machine in
-                    VStack(alignment: .leading, spacing: 8) {
-                        MachineCard(machine: machine, backupIntervalMinutes: presentation.settings.backupIntervalMinutes)
-                        if !machine.isCurrent {
-                            Toggle("Trust this Mac", isOn: Binding(
-                                get: { presentation.settings.trustedMachineNames.contains(machine.name) },
-                                set: { trusted in
-                                    var selection = presentation.settings.trustedMachineNames
-                                    if trusted { selection.insert(machine.name) } else { selection.remove(machine.name) }
-                                    setTrustedMachines(selection)
-                                }
-                            )).toggleStyle(.switch).font(.system(size: 12))
-                                .disabled(!presentation.canChangeSettings)
-                                .padding(.horizontal, 16).padding(.bottom, 8)
-                        }
-                    }
+                    MachineCard(machine: machine, backupIntervalMinutes: presentation.settings.backupIntervalMinutes,
+                                trust: machine.isCurrent ? nil : Binding(
+                                    get: { presentation.settings.trustedMachineNames.contains(machine.name) },
+                                    set: { trusted in
+                                        var selection = presentation.settings.trustedMachineNames
+                                        if trusted { selection.insert(machine.name) } else { selection.remove(machine.name) }
+                                        setTrustedMachines(selection)
+                                    }
+                                ), remove: { setMachineRemoved(machine.name, true) },
+                                canChangeSettings: presentation.canChangeSettings)
                 }
                 Text("Machines appear when they publish a backup to the same folder. Times show their last published backup, not a live connection. Roles appear after each Mac runs the updated app.")
                     .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            if !presentation.settings.removedMachineNames.isEmpty {
+                DisclosureGroup("Removed machines") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Removed on this Mac. Their backups are still available for restore.")
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        ForEach(presentation.settings.removedMachineNames.sorted(), id: \.self) { name in
+                            HStack {
+                                Text(name).font(.system(size: 12)).lineLimit(1).truncationMode(.middle)
+                                Spacer()
+                                Button("Add Back") { setMachineRemoved(name, false) }
+                                    .disabled(!presentation.canChangeSettings)
+                            }
+                        }
+                    }.padding(.top, 8)
+                }.font(.system(size: 12))
             }
             settingsGroup("SYNC") {
                 settingsToggle("Automatically sync trusted Macs",

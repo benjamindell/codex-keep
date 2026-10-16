@@ -4,6 +4,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
     public var destinationRootPath: String
     public var enabledItemIDs: Set<String>
     public var backupIntervalMinutes: Int
+    public var removedMachineNames: Set<String>
     public var trustedMachineNames: Set<String>
     public var automaticallySyncTrustedMachines: Bool
     public var syncRepositoryDevFiles: Bool
@@ -16,6 +17,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         enabledItemIDs: Set<String>,
         backupIntervalMinutes: Int = 30,
         trustedMachineNames: Set<String> = [],
+        removedMachineNames: Set<String> = [],
         automaticallySyncTrustedMachines: Bool = false,
         syncRepositoryDevFiles: Bool = false,
         secondaryMachineMode: Bool = false,
@@ -25,7 +27,8 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         self.destinationRootPath = destinationRootPath
         self.enabledItemIDs = enabledItemIDs
         self.backupIntervalMinutes = backupIntervalMinutes
-        self.trustedMachineNames = trustedMachineNames
+        self.removedMachineNames = removedMachineNames
+        self.trustedMachineNames = trustedMachineNames.subtracting(removedMachineNames)
         self.automaticallySyncTrustedMachines = automaticallySyncTrustedMachines
         self.syncRepositoryDevFiles = syncRepositoryDevFiles
         self.secondaryMachineMode = secondaryMachineMode
@@ -37,6 +40,7 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         case destinationRootPath
         case enabledItemIDs
         case backupIntervalMinutes
+        case removedMachineNames
         case trustedMachineNames
         case automaticallySyncTrustedMachines
         case syncRepositoryDevFiles
@@ -50,7 +54,8 @@ public struct BackupSettings: Codable, Equatable, Sendable {
         self.destinationRootPath = try container.decode(String.self, forKey: .destinationRootPath)
         self.enabledItemIDs = try container.decode(Set<String>.self, forKey: .enabledItemIDs)
         self.backupIntervalMinutes = try container.decodeIfPresent(Int.self, forKey: .backupIntervalMinutes) ?? 30
-        self.trustedMachineNames = try container.decodeIfPresent(Set<String>.self, forKey: .trustedMachineNames) ?? []
+        self.removedMachineNames = try container.decodeIfPresent(Set<String>.self, forKey: .removedMachineNames) ?? []
+        self.trustedMachineNames = (try container.decodeIfPresent(Set<String>.self, forKey: .trustedMachineNames) ?? []).subtracting(removedMachineNames)
         self.automaticallySyncTrustedMachines = try container.decodeIfPresent(Bool.self, forKey: .automaticallySyncTrustedMachines) ?? false
         self.syncRepositoryDevFiles = try container.decodeIfPresent(Bool.self, forKey: .syncRepositoryDevFiles) ?? false
         self.secondaryMachineMode = try container.decodeIfPresent(Bool.self, forKey: .secondaryMachineMode) ?? false
@@ -82,6 +87,19 @@ public struct BackupSettings: Codable, Equatable, Sendable {
                     .map(\.id)
             )
         )
+    }
+
+    /// Forget a peer on this Mac without deleting its backup files.
+    public mutating func removeMachine(_ name: String, currentMachineName: String = Machine.currentName()) {
+        guard name != currentMachineName else { return }
+        removedMachineNames.insert(name)
+        trustedMachineNames.remove(name)
+        if trustedMachineNames.isEmpty { automaticallySyncTrustedMachines = false }
+    }
+
+    /// Make a forgotten peer visible again. Trust must be granted separately.
+    public mutating func restoreMachine(_ name: String) {
+        removedMachineNames.remove(name)
     }
 
     public func isEnabled(_ item: BackupItem) -> Bool {

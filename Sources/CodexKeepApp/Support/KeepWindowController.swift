@@ -8,6 +8,7 @@ import SwiftUI
     private let perform: (KeepAction) -> Void
     private let refresh: () -> Void
     private let setTrustedMachines: (Set<String>) -> Void
+    private let setMachineRemoved: (String, Bool) -> Void
     private var settingsWindow: NSWindow?
     private var globalMonitor: Any?
     private var localMonitor: Any?
@@ -18,12 +19,14 @@ import SwiftUI
     var hasVisibleWindow: Bool { panel.isVisible || settingsWindow?.isVisible == true }
 
     init(statusItem: NSStatusItem, presentation: KeepPresentation, perform: @escaping (KeepAction) -> Void,
-         refresh: @escaping () -> Void, setTrustedMachines: @escaping (Set<String>) -> Void) {
+         refresh: @escaping () -> Void, setTrustedMachines: @escaping (Set<String>) -> Void,
+         setMachineRemoved: @escaping (String, Bool) -> Void) {
         self.statusItem = statusItem
         self.presentation = presentation
         self.perform = perform
         self.refresh = refresh
         self.setTrustedMachines = setTrustedMachines
+        self.setMachineRemoved = setMachineRemoved
         let content = MenuPanel(presentation: presentation,
                                 openSettings: { [weak self] in self?.showSettings(.machines) },
                                 perform: { [weak self] action in self?.perform(action) })
@@ -77,8 +80,9 @@ import SwiftUI
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
             window.title = "Codex Keep Settings"
             window.isReleasedWhenClosed = false
-            let hosting = NSHostingController(rootView: GeometryReader { [presentation, perform, setTrustedMachines] geometry in
-                KeepSettingsView(presentation: presentation, perform: perform, setTrustedMachines: setTrustedMachines)
+            let hosting = NSHostingController(rootView: GeometryReader { [presentation, perform, setTrustedMachines, setMachineRemoved] geometry in
+                KeepSettingsView(presentation: presentation, perform: perform, setTrustedMachines: setTrustedMachines,
+                                 setMachineRemoved: setMachineRemoved)
                     .frame(width: geometry.size.width, height: geometry.size.height)
             })
             hosting.sizingOptions = []
